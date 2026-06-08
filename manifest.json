@@ -1,9 +1,9 @@
 {
   "id": "Desktop-WordCloud-Trends",
   "name": "Desktop WordCloud & Trends",
-  "version": "1.0.0",
+  "version": "1.6.0",
   "minAppVersion": "1.0.0",
-  "description": "专为 Mac 和桌面端优化的笔记趋势与全局热词云引擎。",
+  "description": "专为桌面端和高分辨率设备优化的知识洞察看板。",
   "author": "Your Name",
   "authorUrl": "https://github.com/liyaomingme/Desktop-WordCloud-Trends",
   "isDesktopOnly": true

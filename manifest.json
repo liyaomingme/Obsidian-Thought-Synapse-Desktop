@@ -1,10 +1,10 @@
 {
-    "id": "obsidian-mobile-dashboard",
-    "name": "Mobile Dashboard & Stats",
-    "version": "1.0.0",
-    "minAppVersion": "1.0.0",
-    "description": "A mobile-first dashboard for quick capture and note statistics with charts.",
-    "author": "YourName",
-    "authorUrl": "https://github.com/yourusername",
-    "isDesktopOnly": false
+  "id": "obsidian-note-trends",
+  "name": "Note Trends & Insights",
+  "version": "1.0.0",
+  "minAppVersion": "1.0.0",
+  "description": "Visualizes your note-taking trends and extracts global word clouds from your entire vault.",
+  "author": "Your Name",
+  "authorUrl": "https://github.com/liyaomingme/obsidian-note-trends",
+  "isDesktopOnly": false
 }

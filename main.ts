@@ -4,6 +4,13 @@ import WordCloud from 'wordcloud';
 
 const VIEW_TYPE_STATS = "desktop-stats-view";
 
+// --- 基础虚词过滤库 (提升词云专业感) ---
+const STOP_WORDS = new Set([
+    'the', 'and', 'for', 'that', 'this', 'with', 'from', 'https', 'com', 'org', 
+    'www', 'are', 'can', 'not', 'you', 'your', 'have', 'was', 'but', 'all', 
+    'what', 'http', 'html', 'file', 'png', 'jpg', 'out', 'has', 'will'
+]);
+
 // --- 日期解析引擎 ---
 function parseMessyDate(dateStr: string): string | null {
     const cleanStr = dateStr.replace(/[^\d./-]/g, '');
@@ -56,7 +63,10 @@ async function analyzeVaultData(app: App) {
         const words = cleanText.match(/[\u4e00-\u9fa5]{2,}|\b[a-zA-Z]{3,}\b/g) || [];
         for (const word of words) {
             const w = word.toLowerCase();
-            wordCounts.set(w, (wordCounts.get(w) || 0) + 1);
+            // 过滤掉无意义的虚词
+            if (!STOP_WORDS.has(w)) {
+                wordCounts.set(w, (wordCounts.get(w) || 0) + 1);
+            }
         }
     }
 
@@ -64,7 +74,7 @@ async function analyzeVaultData(app: App) {
     return {
         chartLabels: sortedDates,
         chartValues: sortedDates.map(date => trendData[date]),
-        sortedWords: Array.from(wordCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 100) // 取前100个词
+        sortedWords: Array.from(wordCounts.entries()).sort((a, b) => b[1] - a[1]).slice(0, 100) 
     };
 }
 
@@ -91,15 +101,13 @@ class DesktopStatsView extends ItemView {
         
         const contentWrapper = container.createDiv({ cls: 'stats-content-wrapper' });
 
-        // 左侧面板
         const chartDiv = contentWrapper.createDiv({ cls: 'panel-container' });
-        chartDiv.createEl("h3", { text: "产出趋势 (按日)", cls: 'stats-subtitle' });
+        chartDiv.createEl("h3", { text: "产出趋势", cls: 'stats-subtitle' });
         const chartWrapper = chartDiv.createDiv({ cls: 'canvas-wrapper' });
         const chartCanvas = chartWrapper.createEl("canvas", { attr: { id: "trend-chart" } });
         
-        // 右侧面板
         const wordDiv = contentWrapper.createDiv({ cls: 'panel-container' });
-        wordDiv.createEl("h3", { text: "核心热词分布", cls: 'stats-subtitle' });
+        wordDiv.createEl("h3", { text: "核心概念云图", cls: 'stats-subtitle' });
         const wordWrapper = wordDiv.createDiv({ cls: 'canvas-wrapper' });
         const wordCloudCanvas = wordWrapper.createEl("canvas", { attr: { id: "word-cloud" } });
 
@@ -109,55 +117,95 @@ class DesktopStatsView extends ItemView {
             
             const { chartLabels, chartValues, sortedWords } = await analyzeVaultData(this.app);
 
-            // 1. 渲染趋势图
+            // 1. 苹果风高级折线图绘制
             if (this.chartInstance) this.chartInstance.destroy();
-            this.chartInstance = new Chart(chartCanvas, {
+            
+            // 创建平滑的底部渐变色
+            const ctx = (chartCanvas as HTMLCanvasElement).getContext('2d');
+            let gradientFill = 'rgba(0, 122, 255, 0.1)';
+            if (ctx) {
+                gradientFill = ctx.createLinearGradient(0, 0, 0, chartWrapper.clientHeight);
+                gradientFill.addColorStop(0, 'rgba(0, 122, 255, 0.4)'); // 顶部较深
+                gradientFill.addColorStop(1, 'rgba(0, 122, 255, 0.0)'); // 底部透明
+            }
+
+            this.chartInstance = new Chart(chartCanvas as any, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
                     datasets: [{
-                        label: '笔记新增量',
+                        label: '新增笔记',
                         data: chartValues,
-                        borderColor: '#4f46e5', 
-                        backgroundColor: 'rgba(79, 70, 229, 0.15)',
-                        borderWidth: 2,
-                        pointRadius: 2,
-                        tension: 0.3,
+                        borderColor: '#007AFF', // 经典的纯净科技蓝
+                        backgroundColor: gradientFill,
+                        borderWidth: 3, // 加粗线条更有质感
+                        pointRadius: 0, // 默认隐藏生硬的数据点
+                        pointHoverRadius: 6, // 鼠标悬停时才优雅地浮现
+                        pointBackgroundColor: '#FFFFFF',
+                        pointBorderColor: '#007AFF',
+                        pointBorderWidth: 2,
+                        tension: 0.4, // 极其平滑的曲线过渡
                         fill: true
                     }]
                 },
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
-                    plugins: { legend: { display: false } },
+                    interaction: { mode: 'index', intersect: false }, // 极佳的悬停交互体验
+                    plugins: { 
+                        legend: { display: false },
+                        tooltip: { // 高级悬停提示框
+                            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                            padding: 12,
+                            cornerRadius: 8,
+                            displayColors: false,
+                            titleFont: { size: 14, family: 'sans-serif' },
+                            bodyFont: { size: 14, family: 'sans-serif' }
+                        }
+                    },
                     scales: { 
-                        x: { display: true },
-                        y: { beginAtZero: true, ticks: { precision: 0 } }
+                        x: { 
+                            display: true, 
+                            grid: { display: false }, // 干掉竖向网格
+                            ticks: { color: '#8E8E93', maxRotation: 45 } 
+                        },
+                        y: { 
+                            beginAtZero: true, 
+                            border: { display: false }, // 干掉Y轴那根突兀的主线
+                            grid: { color: 'rgba(142, 142, 147, 0.1)' }, // 极淡的高级横向辅助线
+                            ticks: { precision: 0, color: '#8E8E93', padding: 10 }
+                        }
                     } 
                 }
             });
 
-            // 2. 渲染词云（防爆改版）
-            // 计算最高频词的次数，用于按比例缩放
+            // 2. 高级质感词云绘制
             const maxFreq = sortedWords.length > 0 ? sortedWords[0][1] : 1;
-            
-            // 确保 Canvas 元素的内部渲染尺寸和外部容器一致
             wordCloudCanvas.width = wordWrapper.clientWidth;
             wordCloudCanvas.height = wordWrapper.clientHeight;
+            
+            const minSize = 14;
+            const maxSize = 75;
 
             WordCloud(wordCloudCanvas, {
                 list: sortedWords,
-                gridSize: 8, // 缩小网格让排版更紧密
+                gridSize: 8,
                 weightFactor: function (size) { 
-                    // 动态比例尺：无论最高频次是 5 还是 5000，字号都被限制在 12px ~ 65px 之间
                     const normalized = size / maxFreq;
-                    return (normalized * 50) + 12; 
+                    return (normalized * (maxSize - minSize)) + minSize; 
                 }, 
-                fontFamily: 'Inter, "PingFang SC", sans-serif',
-                color: 'random-dark',
-                rotateRatio: 0,
-                shrinkToFit: true, // 核心属性：如果字太大放不下，强制缩小
-                drawOutOfBound: false, // 核心属性：绝对不允许画出框外
+                // 使用极其饱满厚重的英文字体族
+                fontFamily: 'Impact, "Arial Black", "Helvetica Neue", sans-serif',
+                fontWeight: '900', 
+                // 核心渐变算法：根据计算出的真实字号，动态赋予透明度
+                color: function(word: string, weight: number, fontSize: number) {
+                    // 让透明度在 0.35 到 1.0 之间丝滑过渡
+                    const opacity = 0.35 + 0.65 * ((fontSize - minSize) / (maxSize - minSize));
+                    return `rgba(0, 122, 255, ${opacity})`; // 与折线图完美呼应的科技蓝纯色系
+                },
+                rotateRatio: 0, // 坚持水平排版，最像苹果的设计语言
+                shrinkToFit: true, 
+                drawOutOfBound: false, 
                 backgroundColor: 'transparent'
             });
 
@@ -166,7 +214,6 @@ class DesktopStatsView extends ItemView {
         };
 
         refreshBtn.addEventListener('click', renderData);
-        // 稍微延迟渲染，等待 CSS 布局完成获取真实宽高
         setTimeout(renderData, 100); 
     }
 }

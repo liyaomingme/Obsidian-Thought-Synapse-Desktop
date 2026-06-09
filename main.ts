@@ -2,7 +2,7 @@ import { App, ItemView, Plugin, WorkspaceLeaf, Notice, Modal, TFile, setIcon } f
 
 const VIEW_TYPE_STATS_HEATMAP = "desktop-stats-heatmap-view";
 
-// --- 深度清洗过滤库 (加入更多中文常用虚词，保持数据精准) ---
+// --- 深度清洗过滤库 ---
 const STOP_WORDS = new Set([
     'the', 'and', 'for', 'that', 'this', 'with', 'from', 'https', 'com', 'org', 
     'www', 'are', 'can', 'not', 'you', 'your', 'have', 'was', 'but', 'all', 
@@ -13,17 +13,20 @@ const STOP_WORDS = new Set([
     '各位', '谢谢', '由于', '其实', '只要', '目前', '开始'
 ]);
 
-// --- 核心新架构：Web-Spherical 3D 星系引擎 ---
+// --- 进阶版 3D 星系引擎 (加入 Z 轴高级景深算法) ---
 class WordSphereEngine {
     container: HTMLElement;
     radius: number;
-    tags: { el: HTMLElement, x: number, y: number, z: number, theta: number, phi: number }[] = [];
+    tags: { el: HTMLElement, x: number, y: number, z: number, theta: number, phi: number, baseFontSize: number, baseWeight: string }[] = [];
     isStopped = false;
+    isHoveringNode = false; // 是否正在悬停某个节点（用于接管接管景深）
     mouseX = 0;
     mouseY = 0;
     lastMouseX = 0;
     lastMouseY = 0;
     damping = 0.95; 
+    animationFrameId: number;
+    isActive = true;
 
     constructor(container: HTMLElement, radius: number) {
         this.container = container;
@@ -31,14 +34,14 @@ class WordSphereEngine {
         this.setupMouseListeners();
     }
 
-    addTag(tagEl: HTMLElement) {
+    addTag(tagEl: HTMLElement, baseFontSize: number, baseWeight: string) {
         tagEl.style.position = 'absolute';
         tagEl.style.cursor = 'pointer';
-        tagEl.style.willChange = 'transform, opacity';
+        tagEl.style.willChange = 'transform, opacity, filter';
         
         const count = this.tags.length;
-        // 计算菲波那契球体均匀分布点 (确保大词不挤，小词不散)
-        const offset = 2 / (50); // 最优密度为 50 个词以内
+        // 菲波那契球面算法
+        const offset = 2 / 50; 
         const increment = Math.PI * (3 - Math.sqrt(5));
         const y = ((count * offset) - 1) + (offset / 2);
         const r = Math.sqrt(1 - y * y);
@@ -50,7 +53,9 @@ class WordSphereEngine {
             y: y * this.radius,
             z: Math.sin(phi) * r * this.radius,
             theta: Math.atan2(Math.sin(phi) * r * this.radius, Math.cos(phi) * r * this.radius),
-            phi: Math.acos(y)
+            phi: Math.acos(y),
+            baseFontSize,
+            baseWeight
         });
         
         this.container.appendChild(tagEl);
@@ -59,7 +64,6 @@ class WordSphereEngine {
     private setupMouseListeners() {
         this.container.addEventListener('mousemove', (e) => {
             const rect = this.container.getBoundingClientRect();
-            // 计算鼠标相对于容器中心点的偏移比例
             this.mouseX = (e.clientX - (rect.left + rect.width / 2)) / (rect.width / 2);
             this.mouseY = (e.clientY - (rect.top + rect.height / 2)) / (rect.height / 2);
         });
@@ -68,7 +72,6 @@ class WordSphereEngine {
         this.container.addEventListener('mouseleave', () => this.isStopped = true);
     }
 
-    // 核心动画算法：一休止平滑转动 + 景深算法
     startAnimation() {
         if (this.tags.length === 0) return;
         
@@ -77,8 +80,7 @@ class WordSphereEngine {
         let currentRotationX = 0;
         let currentRotationY = 0;
 
-        // 核心惯性滑动算法：鼠标移动改变目标旋转角度
-        this.container.addEventListener('mousemove', (e) => {
+        this.container.addEventListener('mousemove', () => {
             targetRotationY += (this.mouseX - this.lastMouseX) * 0.08;
             targetRotationX += (this.mouseY - this.lastMouseY) * 0.08;
             this.lastMouseX = this.mouseX;
@@ -86,12 +88,12 @@ class WordSphereEngine {
         });
 
         const animate = () => {
-            // 基础自转速度（极低，保持呼吸感）
+            if (!this.isActive) return;
+
             let baseSpeedX = 0.001; 
             let baseSpeedY = 0.0015;
 
-            if (!this.isStopped) {
-                // 应用鼠标惯性滑动
+            if (!this.isStopped && !this.isHoveringNode) {
                 currentRotationX += (targetRotationX - currentRotationX) * 0.05;
                 currentRotationY += (targetRotationY - currentRotationY) * 0.05;
                 targetRotationX *= this.damping;
@@ -100,64 +102,82 @@ class WordSphereEngine {
                 baseSpeedY += currentRotationY;
             }
 
-            // 更新每个词的三维坐标与景深样式
             this.tags.forEach(tag => {
-                // 三维球体坐标变换
-                const x1 = tag.x * Math.cos(baseSpeedY) - tag.z * Math.sin(baseSpeedY);
-                const z1 = tag.z * Math.cos(baseSpeedY) + tag.x * Math.sin(baseSpeedY);
-                const y1 = tag.y * Math.cos(baseSpeedX) - z1 * Math.sin(baseSpeedX);
-                const z2 = z1 * Math.cos(baseSpeedX) + tag.y * Math.sin(baseSpeedX);
-                
-                tag.x = x1;
-                tag.y = y1;
-                tag.z = z2;
+                // 三维坐标旋转变换
+                if (!this.isHoveringNode) {
+                    const x1 = tag.x * Math.cos(baseSpeedY) - tag.z * Math.sin(baseSpeedY);
+                    const z1 = tag.z * Math.cos(baseSpeedY) + tag.x * Math.sin(baseSpeedY);
+                    const y1 = tag.y * Math.cos(baseSpeedX) - z1 * Math.sin(baseSpeedX);
+                    const z2 = z1 * Math.cos(baseSpeedX) + tag.y * Math.sin(baseSpeedX);
+                    tag.x = x1; tag.y = y1; tag.z = z2;
+                }
 
-                // 景深算法 (Perspective & Depth of Field)
-                const perspective = (z2 + this.radius) / (2 * this.radius);
-                // 彻底取消之前的颜色渐变，改为原生高级景深处理
-                const opacity = 0.08 + (0.92 * perspective); 
-                const scale = 0.75 + (0.25 * perspective);
-                // 高级景深虚化：无关词汇根据远近进行虚化处理
-                const blur = z2 < 0 ? Math.abs(z2) / this.radius * 2 : 0; 
-                
-                // 应用三维变换样式
-                tag.el.style.transform = `translate3d(${tag.x}px, ${tag.y}px, ${z2}px) scale(${scale})`;
-                tag.el.style.opacity = opacity.toString();
-                // 在浅色模式下应用高级景深虚化
-                tag.el.style.filter = `blur(${blur}px)`;
-                // 确保大词不拧，大圆角卡片质感
-                tag.el.style.borderRadius = '16px'; 
-                tag.el.style.zIndex = Math.round(z2 + this.radius).toString();
+                // =========================================================
+                // 核心修复：极致的 Z 轴景深算法 (Depth of Field) 解决重叠不可读问题
+                // =========================================================
+                if (!this.isHoveringNode) {
+                    const zRatio = tag.z / this.radius; // 值域: -1 (最背面) 到 1 (最前面)
+                    
+                    let opacity = 0;
+                    let blur = 0;
+                    
+                    if (zRatio > 0.4) {
+                        // 【前层 30%】：完全清晰，100% 不透明
+                        opacity = 1;
+                        blur = 0;
+                        tag.el.style.color = 'var(--interactive-accent)'; // 正面用亮色
+                    } else if (zRatio > 0) {
+                        // 【中层】：平滑衰减，产生空间透视感
+                        opacity = 0.4 + 0.6 * (zRatio / 0.4);
+                        blur = 0;
+                        tag.el.style.color = 'var(--text-normal)'; // 中间用常态色
+                    } else {
+                        // 【后半球】：极度暗淡，并加入高斯模糊，彻底沦为背景
+                        opacity = 0.05 + 0.15 * ((zRatio + 1) / 1); // 5% 到 20%
+                        blur = Math.min(3, Math.abs(zRatio) * 3); // 背面最深处模糊 3px
+                        tag.el.style.color = 'var(--text-muted)';
+                    }
+
+                    // 三维透视缩放比例
+                    const scale = (this.radius + tag.z) / (2 * this.radius); 
+                    const finalScale = 0.6 + 0.6 * scale; 
+
+                    tag.el.style.transform = `translate3d(${tag.x}px, ${tag.y}px, 0px) scale(${finalScale})`;
+                    tag.el.style.opacity = opacity.toString();
+                    tag.el.style.filter = `blur(${blur}px)`;
+                    tag.el.style.zIndex = Math.round(tag.z + this.radius).toString();
+                }
             });
 
-            requestAnimationFrame(animate);
+            this.animationFrameId = requestAnimationFrame(animate);
         };
 
         animate();
     }
+
+    destroy() {
+        this.isActive = false;
+        if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    }
 }
 
-// --- 深度数据分析引擎 (追踪文件来源) ---
+// --- 数据分析引擎 ---
 async function analyzeVaultData(app: App) {
     const files = app.vault.getMarkdownFiles();
     const wordData = new Map<string, { count: number, files: Set<TFile> }>();
 
     for (const file of files) {
         const content = await app.vault.cachedRead(file);
-        // 极速提纯内容，忽略代码块、YAML、Markdown符号
         const cleanText = content
             .replace(/```[\s\S]*?```/g, '') 
             .replace(/---[\s\S]*?---/, '')  
             .replace(/[#*`>\[\]()]/g, '');  
 
-        // 匹配 2 个以上的中文字符或 3 个以上的英文字符
         const words = cleanText.match(/[\u4e00-\u9fa5]{2,}|\b[a-zA-Z]{3,}\b/g) || [];
         for (const word of words) {
             const w = word.toLowerCase();
             if (!STOP_WORDS.has(w)) {
-                if (!wordData.has(w)) {
-                    wordData.set(w, { count: 0, files: new Set() });
-                }
+                if (!wordData.has(w)) { wordData.set(w, { count: 0, files: new Set() }); }
                 const entry = wordData.get(w)!;
                 entry.count++;
                 entry.files.add(file);
@@ -167,7 +187,7 @@ async function analyzeVaultData(app: App) {
 
     return Array.from(wordData.entries())
                 .sort((a, b) => b[1].count - a[1].count)
-                .slice(0, 48) // 缩减到 Top 48，大词更饱满，留白更高级
+                .slice(0, 48) // 保持 48 个核心节点，避免球体拥挤
                 .map(([word, data]) => ({ word, value: data.count, files: Array.from(data.files) }));
 }
 
@@ -248,7 +268,7 @@ class WordContextModal extends Modal {
                     snippetDiv.appendChild(document.createTextNode('"...'));
                     parts.forEach(part => {
                         if (part.toLowerCase() === this.word.toLowerCase()) {
-                            const span = snippetDiv.createEl('span', { text: part, attr: { style: 'color: #fff; background-color: var(--interactive-accent); padding: 2px 6px; border-radius: 6px; font-weight: bold; margin: 0 2px;' } });
+                            snippetDiv.createEl('span', { text: part, attr: { style: 'color: #fff; background-color: var(--interactive-accent); padding: 2px 6px; border-radius: 6px; font-weight: bold; margin: 0 2px;' } });
                         } else {
                             snippetDiv.appendChild(document.createTextNode(part));
                         }
@@ -266,7 +286,7 @@ class WordContextModal extends Modal {
 
 // --- 桌面端视图 ---
 class DesktopStatsHeatmapView extends ItemView {
-    sphereEngine: WordSphereEngine;
+    sphereEngine: WordSphereEngine | null = null;
     
     constructor(leaf: WorkspaceLeaf) {
         super(leaf);
@@ -274,133 +294,142 @@ class DesktopStatsHeatmapView extends ItemView {
 
     getViewType() { return VIEW_TYPE_STATS_HEATMAP; }
     getDisplayText() { return "知识资产热力全景"; }
-    getIcon() { return "activity"; } // 更换为具有动态感知的图标
+    getIcon() { return "activity"; } 
 
     async onOpen() {
         const container = this.containerEl.children[1];
         container.empty();
         container.addClass('stats-heatmap-dashboard-container');
 
-        // 应用高分辨率全屏铺满 CSS，去除繁琐的边距，贴合原生质感
         container.setAttr('style', `
             padding: 40px;
             display: flex;
             flex-direction: column;
             height: 100%;
-            overflow: hidden; // 确保 3D 球体不溢出
+            overflow: hidden; 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
             -webkit-font-smoothing: antialiased;
             background-color: var(--background-secondary);
         `);
 
-        // 极简顶部标题（去掉下划线，完全留白）
         const headerDiv = container.createDiv({ attr: { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; flex-shrink: 0;' } });
         headerDiv.createEl("h2", { text: "知识资产热力全景", attr: { style: 'margin: 0; font-size: 1.7em; font-weight: 800; letter-spacing: -0.5px;' } });
         const refreshBtn = headerDiv.createEl("button", { text: "重新扫描神经元", attr: { style: 'padding: 8px 20px; cursor: pointer; background-color: var(--interactive-accent); color: var(--text-on-accent); border-radius: 20px; border: none; font-size: 0.9em; font-weight: 500;' } });
         
         const contentWrapper = container.createDiv({ attr: { style: 'display: flex; flex-direction: column; flex: 1; min-height: 0;' } });
 
-        // 关键重构：核心原生态 3D 球体容器 (极致留白呼吸感)
         const heatmapDiv = contentWrapper.createDiv({ 
-            attr: { style: 'flex: 1; display: flex; justify-content: center; align-items: center; background-color: var(--background-primary); border-radius: 24px; box-shadow: 0 16px 48px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.02);' } 
+            attr: { style: 'flex: 1; display: flex; justify-content: center; align-items: center; background-color: var(--background-primary); border-radius: 24px; box-shadow: 0 16px 48px rgba(0,0,0,0.04), 0 4px 16px rgba(0,0,0,0.02); overflow: hidden;' } 
         });
         
-        // 核心原生态球体画布 (开启透视视距)
         const sphereCanvas = heatmapDiv.createDiv({ 
-            attr: { style: 'width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative; perspective: 1500px;' } 
+            attr: { style: 'width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; position: relative;' } 
         });
 
         const renderData = async () => {
             refreshBtn.innerText = "神经元捕捉中...";
             refreshBtn.disabled = true;
+            if (this.sphereEngine) {
+                this.sphereEngine.destroy();
+            }
             sphereCanvas.empty();
             
             const heatmapWords = await analyzeVaultData(this.app);
             const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
 
-            // 菲波那契球体均匀分布点半径计算，确保大卡片质感
-            const baseRadius = Math.min(heatmapDiv.clientWidth, heatmapDiv.clientHeight) / 2 - 120;
-            const engine = new WordSphereEngine(sphereCanvas, baseRadius);
+            // 核心修复：防止容器未渲染完成导致半径过小（挤成一团）
+            // 采用动态计算并设置一个绝对保底半径 180px
+            const containerMinSide = Math.min(heatmapDiv.clientWidth || 500, heatmapDiv.clientHeight || 500);
+            const baseRadius = Math.max((containerMinSide / 2) * 0.75, 180);
+
+            this.sphereEngine = new WordSphereEngine(sphereCanvas, baseRadius);
+            const domNodes: any[] = [];
 
             heatmapWords.forEach(({word, value, files}) => {
                 const wordEl = document.createElement('div');
                 wordEl.innerText = word;
                 
-                // 彻底取消之前的颜色渐变，统一使用苹果原生态经典蓝 (0, 122, 255)
-                const baseColor = 'rgba(0, 122, 255, 1)';
+                const fontSize = Math.max(14, Math.min(56, 14 + (value/maxWordCount)*42));
+                const fontWeight = value > maxWordCount * 0.6 ? '850' : (value > maxWordCount * 0.3 ? '700' : '500');
                 
-                // 强制应用 SF Pro 显示黑体，增加视觉饱满度
-                // 彻底去除圆角，恢复锐利的卡片质感，大词号，增加景深信息
                 wordEl.setAttr("style", `
-                    color: ${baseColor}; 
-                    font-size: ${Math.max(14, Math.min(60, 14 + (value/maxWordCount)*46))}px;
-                    font-weight: 850;
+                    font-size: ${fontSize}px;
+                    font-weight: ${fontWeight};
                     letter-spacing: -0.5px;
-                    padding: 8px 16px;
-                    border-radius: 0px; // 去除圆角
-                    background-color: var(--background-primary); // 增加底层白色，使景深模糊更高级
-                    border: 0px; // 去除描边
+                    padding: 4px 8px;
+                    white-space: nowrap;
                     user-select: none;
+                    transition: transform 0.2s, opacity 0.2s, color 0.2s, filter 0.2s;
+                    transform-origin: center center;
                 `);
                 
-                // 鼠标交互保持原本逻辑：点击呼出防崩溃 Modal
                 wordEl.addEventListener('click', () => {
                     new WordContextModal(this.app, word, files).open();
                 });
-                
-                // 3D 联动交互逻辑：聚光灯聚焦当前神经元及其共现关联
-                wordEl.addEventListener('mouseenter', () => {
-                    engine.isStopped = true; // 停止自转
-                    const targetFilePaths = new Set(files.map(f => f.path));
-                    
-                    engine.tags.forEach(tag => {
-                        let isCoOccurring = false;
-                        tag.el.setAttribute('data-target-paths', '').split(',').forEach(p => {
-                            if (p && targetFilePaths.has(p)) {
-                                isCoOccurring = true;
-                                return;
-                            }
-                        });
 
-                        if (tag.el === wordEl) {
-                            // 当前神经元：最大化聚焦，景深置顶
-                            tag.el.style.opacity = '1';
-                            tag.el.style.filter = 'blur(0px)';
-                            tag.el.style.transform = `${tag.el.style.transform.split(' scale')[0]} scale(1.1) translateZ(${baseRadius + 50}px)`; // 置顶景深
-                            tag.el.style.zIndex = '9999';
-                            tag.el.style.textShadow = '0 12px 24px rgba(0, 122, 255, 0.4)';
+                domNodes.push({ el: wordEl, files: new Set(files.map(f => f.path)) });
+                this.sphereEngine!.addTag(wordEl, fontSize, fontWeight);
+            });
+
+            // 聚光灯与关系网络显影联动
+            domNodes.forEach(node => {
+                node.el.addEventListener('mouseenter', () => {
+                    if(!this.sphereEngine) return;
+                    this.sphereEngine.isHoveringNode = true; // 接管渲染样式
+                    const targetFiles = node.files;
+                    
+                    domNodes.forEach(other => {
+                        let isCoOccurring = false;
+                        for (let p of other.files) {
+                            if (targetFiles.has(p)) { isCoOccurring = true; break; }
+                        }
+
+                        if (other === node) {
+                            // 悬停目标：绝对置顶，解除模糊，发光放大
+                            other.el.style.opacity = '1';
+                            other.el.style.filter = 'blur(0px)';
+                            other.el.style.transform = `${other.el.style.transform.split(' scale')[0]} scale(1.3)`;
+                            other.el.style.zIndex = '99999';
+                            other.el.style.color = 'var(--interactive-accent)';
+                            other.el.style.textShadow = '0 12px 24px rgba(0, 122, 255, 0.4)';
                         } else if (isCoOccurring) {
-                            // 共现关联神经元：亮起，景深清晰
-                            tag.el.style.opacity = '0.9';
-                            tag.el.style.filter = 'blur(0px)';
-                            tag.el.style.textShadow = 'none';
+                            // 关联节点：提亮，解除模糊
+                            other.el.style.opacity = '0.9';
+                            other.el.style.filter = 'blur(0px)';
+                            other.el.style.color = 'var(--text-normal)';
+                            other.el.style.textShadow = 'none';
                         } else {
-                            // 无关神经元：深海景深虚化
-                            tag.el.style.opacity = '0.05';
-                            tag.el.style.filter = `blur(12px)`;
-                            tag.el.style.textShadow = 'none';
+                            // 无关节点：极度虚化，透明度降至极低
+                            other.el.style.opacity = '0.05';
+                            other.el.style.filter = `blur(8px)`;
+                            other.el.style.color = 'var(--text-muted)';
+                            other.el.style.textShadow = 'none';
                         }
                     });
                 });
                 
-                wordEl.addEventListener('mouseleave', () => {
-                    engine.isStopped = false; // 恢复自转
+                node.el.addEventListener('mouseleave', () => {
+                    if(!this.sphereEngine) return;
+                    this.sphereEngine.isHoveringNode = false; // 交还给 3D 引擎循环
+                    domNodes.forEach(other => {
+                        other.el.style.textShadow = 'none';
+                    });
                 });
-                
-                // 将共现文件的路径挂载在 DOM 上，用于 3D 聚光灯联动计算
-                wordEl.setAttribute('data-target-paths', files.map(f => f.path).join(','));
-                
-                // 核心重构：彻底移除了 ID 绑定，采用无冲突的 DOM 对象传递方式
-                engine.addTag(wordEl);
             });
 
-            engine.startAnimation();
+            this.sphereEngine.startAnimation();
             refreshBtn.innerText = "重新扫描神经元";
             refreshBtn.disabled = false;
         };
 
         refreshBtn.addEventListener('click', renderData);
-        setTimeout(renderData, 150); 
+        setTimeout(renderData, 200); 
+    }
+
+    async onClose() {
+        if (this.sphereEngine) {
+            this.sphereEngine.destroy();
+        }
     }
 }
 
@@ -408,18 +437,11 @@ class DesktopStatsHeatmapView extends ItemView {
 export default class DesktopStatsPlugin extends Plugin {
     async onload() {
         this.registerView(VIEW_TYPE_STATS_HEATMAP, (leaf) => new DesktopStatsHeatmapView(leaf));
-        
-        // 此图标也同步更换为具有动态感知的图标
-        this.addRibbonIcon('activity', '打开知识资产热力全景', () => {
-            this.activateView();
-        });
-
+        this.addRibbonIcon('activity', '打开知识资产热力全景', () => this.activateView());
         this.addCommand({
             id: 'open-heatmap-dashboard',
             name: '打开知识资产热力全景',
-            callback: () => {
-                this.activateView();
-            }
+            callback: () => this.activateView()
         });
     }
 
@@ -429,10 +451,9 @@ export default class DesktopStatsPlugin extends Plugin {
 
     async activateView() {
         const { workspace } = this.app;
-        
         let existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_STATS_HEATMAP);
         for (let i = 0; i < existingLeaves.length; i++) {
-            existingLeaves[i].detach(); // 安全清理所有的旧视图，彻底封杀崩溃可能
+            existingLeaves[i].detach(); 
         }
 
         const leaf = workspace.getRightLeaf(false);

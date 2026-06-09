@@ -11,7 +11,7 @@ const STOP_WORDS = new Set([
     'which', 'when', 'more', 'about', 'their', 'there', 'some'
 ]);
 
-// --- 日期解析引擎 (恢复保留，确保你的历史文件名能被正确读取) ---
+// --- 日期解析引擎 ---
 function parseMessyDate(dateStr: string): string | null {
     const cleanStr = dateStr.replace(/[^\d./-]/g, '');
     let match = cleanStr.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
@@ -47,7 +47,6 @@ async function analyzeVaultData(app: App) {
     const dateTrend = new Map<string, number>(); 
 
     for (const file of files) {
-        // 解析日期
         let noteDateStr = parseMessyDate(file.basename);
         if (!noteDateStr) {
             const createTime = new Date(file.stat.ctime);
@@ -55,7 +54,6 @@ async function analyzeVaultData(app: App) {
         }
         dateTrend.set(noteDateStr, (dateTrend.get(noteDateStr) || 0) + 1);
 
-        // 词频分析
         const content = await app.vault.cachedRead(file);
         const cleanText = content
             .replace(/```[\s\S]*?```/g, '') 
@@ -71,18 +69,15 @@ async function analyzeVaultData(app: App) {
         }
     }
 
-    // 处理热力图数据
     const heatmapData = Array.from(dateTrend.entries()).map(([dateStr, count]) => {
         return { date: new Date(dateStr), count: count };
     });
 
     return {
-        // 热力词汇数据：只取频率最高的 100 个
         heatmapWords: Array.from(wordCounts.entries())
                             .sort((a, b) => b[1] - a[1])
                             .slice(0, 100)
                             .map(([word, value]) => ({ word, value })),
-        // 热力图数据
         heatmapData: heatmapData
     };
 }
@@ -100,20 +95,17 @@ class WordHeatmapModal extends Modal {
         let { contentEl } = this;
         contentEl.empty();
         
-        // 模态框标题
         contentEl.createEl("h2", { 
             text: "核心概念热力矩阵", 
             attr: { style: "text-align: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-weight: 600; margin-bottom: 24px;" } 
         });
 
-        // 词汇容器
         const wordsContainer = contentEl.createDiv({ 
             attr: { style: "display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; padding: 10px;" } 
         });
         
         const maxCount = this.words.length > 0 ? this.words[0].value : 1;
         
-        // 使用科技蓝色系插值算法
         const colorScale = d3.scaleSequential()
                              .domain([0, maxCount])
                              .interpolator(d3.interpolateBlues); 
@@ -122,7 +114,6 @@ class WordHeatmapModal extends Modal {
             const wordEl = wordsContainer.createDiv();
             wordEl.setText(word);
             
-            // 动态计算背景色与字体对比度，圆角胶囊样式
             const bgColor = colorScale(value);
             const textColor = value > maxCount * 0.4 ? '#ffffff' : '#333333';
             
@@ -165,7 +156,7 @@ class DesktopStatsHeatmapView extends ItemView {
 
     getViewType() { return VIEW_TYPE_STATS_HEATMAP; }
     getDisplayText() { return "知识热力看板"; }
-    getIcon() { return "heatmap"; } // 匹配新图标
+    getIcon() { return "heatmap"; }
 
     async onOpen() {
         const container = this.containerEl.children[1];
@@ -178,10 +169,11 @@ class DesktopStatsHeatmapView extends ItemView {
         
         const contentWrapper = container.createDiv({ cls: 'stats-content-wrapper' });
 
-        // 热力图容器 (独占空间)
         const heatmapDiv = contentWrapper.createDiv({ cls: 'panel-container', attr: { style: 'flex: 1;' } });
         heatmapDiv.createEl("h3", { text: "笔记产出活跃度", cls: 'stats-subtitle' });
-        const heatmapWrapper = heatmapDiv.createDiv({ attr: { id: 'heatmap-container', style: 'width: 100%; height: 100%; min-height: 250px; display: flex; justify-content: center; align-items: center;' } });
+        
+        // 关键修复：不再使用 ID，直接用 DOM 对象生成 D3 画布，防止 Obsidian 内部冲突
+        const heatmapWrapper = heatmapDiv.createDiv({ attr: { style: 'width: 100%; height: 100%; min-height: 250px; display: flex; justify-content: center; align-items: center;' } });
 
         const renderData = async () => {
             refreshBtn.innerText = "数据计算中...";
@@ -189,16 +181,14 @@ class DesktopStatsHeatmapView extends ItemView {
             
             const { heatmapWords, heatmapData } = await analyzeVaultData(this.app);
 
-            // 绘制 D3 热力图
             const width = heatmapWrapper.clientWidth || 800;
             const height = heatmapWrapper.clientHeight || 250;
-            
-            // 算法：以年为单位的 53 周 x 7 天网格
             const cellSize = Math.min(width / 55, height / 9); 
 
-            d3.select('#heatmap-container').select('svg').remove(); 
+            // 安全重绘机制
+            d3.select(heatmapWrapper).select('svg').remove(); 
 
-            const svg = d3.select('#heatmap-container')
+            const svg = d3.select(heatmapWrapper)
                           .append('svg')
                           .attr('width', width)
                           .attr('height', height)
@@ -208,9 +198,8 @@ class DesktopStatsHeatmapView extends ItemView {
             const maxCount = d3.max(heatmapData, d => d.count) || 1;
             const colorScale = d3.scaleSequential()
                                  .domain([0, maxCount])
-                                 .interpolator(d3.interpolateBlues); // 苹果蓝热力色
+                                 .interpolator(d3.interpolateBlues); 
 
-            // 绘制方块
             svg.selectAll('rect')
                .data(heatmapData)
                .enter()
@@ -220,9 +209,9 @@ class DesktopStatsHeatmapView extends ItemView {
                .attr('width', cellSize)
                .attr('height', cellSize)
                .attr('fill', d => colorScale(d.count))
-               .attr('rx', 4) // 圆润的 R 角
+               .attr('rx', 4) 
                .attr('ry', 4)
-               .style('stroke', 'rgba(0,0,0,0.05)') // 微妙的边框增加质感
+               .style('stroke', 'rgba(0,0,0,0.05)') 
                .style('stroke-width', '1px')
                .append('title')
                .text(d => `${d.date.toISOString().split('T')[0]}: 产出 ${d.count} 篇`);
@@ -230,7 +219,6 @@ class DesktopStatsHeatmapView extends ItemView {
             refreshBtn.innerText = "重新抓取数据";
             refreshBtn.disabled = false;
 
-            // 渲染完毕后自动弹出热力词 Modal
             new WordHeatmapModal(this.app, heatmapWords).open();
         };
 
@@ -239,16 +227,26 @@ class DesktopStatsHeatmapView extends ItemView {
     }
 }
 
-// --- 插件主入口：包含终极防崩溃生命周期管理 ---
+// --- 插件主入口 ---
 export default class DesktopStatsPlugin extends Plugin {
     async onload() {
         this.registerView(VIEW_TYPE_STATS_HEATMAP, (leaf) => new DesktopStatsHeatmapView(leaf));
+        
+        // 1. 侧边栏图标
         this.addRibbonIcon('heatmap', '打开产出热力看板', () => {
             this.activateView();
         });
+
+        // 2. 关键修复：正式向 Obsidian 注册命令，解决“未找到命令”的报错
+        this.addCommand({
+            id: 'open-heatmap-dashboard',
+            name: '打开产出热力看板',
+            callback: () => {
+                this.activateView();
+            }
+        });
     }
 
-    // 关键修正：插件卸载/重载时强制清空旧视图，彻底消灭 "插件不再活动" 报错
     async onunload() {
         this.app.workspace.detachLeavesOfType(VIEW_TYPE_STATS_HEATMAP);
     }
@@ -256,7 +254,6 @@ export default class DesktopStatsPlugin extends Plugin {
     async activateView() {
         const { workspace } = this.app;
         
-        // 强力清理：检索所有相关标签页并销毁，防止冲突
         let existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_STATS_HEATMAP);
         for (let i = 1; i < existingLeaves.length; i++) {
             existingLeaves[i].detach(); 

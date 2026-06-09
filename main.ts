@@ -12,12 +12,13 @@ const STOP_WORDS = new Set([
     '各位', '谢谢', '由于', '其实', '只要', '目前', '开始'
 ]);
 
-// 核心重构：解耦逻辑坐标(lx,ly,lz)与渲染物理坐标(rx,ry,rz)，加入速度分量(vx,vy,vz)
+// 核心重构：解耦逻辑坐标与渲染物理坐标，加入平滑缩放属性
 interface SphereNode {
     el: HTMLElement;
     lx: number; ly: number; lz: number; // 逻辑层：永远随星系匀速旋转
     rx: number; ry: number; rz: number; // 物理层：受弹簧和斥力影响的真实位置
     vx: number; vy: number; vz: number; // 弹簧速度分量
+    currentScale: number;               // 纯 JS 接管的平滑弹簧缩放
     zRatio: number;
     baseFontSize: number;
     baseWeight: string;
@@ -25,6 +26,7 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
+// --- 物理级 3D 星系引擎 (流体磁斥力弹簧系统) ---
 class WordSphereEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -35,7 +37,7 @@ class WordSphereEngine {
     tags: SphereNode[] = [];
     
     isDragging = false;
-    hoveredTag: SphereNode | null = null; // 记录当前吸附的中心节点
+    hoveredTag: SphereNode | null = null; 
     previousMouseX = 0; 
     previousMouseY = 0;
     canvasMouseX = 0; 
@@ -52,7 +54,7 @@ class WordSphereEngine {
 
     private onMouseMove = (e: MouseEvent) => {
         const rect = this.container.getBoundingClientRect();
-        // 记录相对于画布中心的鼠标坐标，用于节点的绝对吸附
+        // 实时追踪鼠标在画布内部的相对坐标，用于主角节点的绝对吸附
         this.canvasMouseX = e.clientX - rect.left - rect.width / 2;
         this.canvasMouseY = e.clientY - rect.top - rect.height / 2;
 
@@ -119,6 +121,7 @@ class WordSphereEngine {
         tagEl.style.left = '50%';
         tagEl.style.top = '50%';
         tagEl.style.cursor = 'pointer';
+        // 核心：移除 transform 的 CSS 渐变，纯 JS 接管实现完美弹簧果冻效
         tagEl.style.willChange = 'transform, opacity, filter, color';
         tagEl.style.zIndex = '10'; 
         
@@ -136,8 +139,9 @@ class WordSphereEngine {
         this.tags.push({
             el: tagEl,
             lx: x, ly: cy, lz: z,
-            rx: x, ry: cy, rz: z, // 初始物理坐标等于逻辑坐标
+            rx: x, ry: cy, rz: z, 
             vx: 0, vy: 0, vz: 0,
+            currentScale: 1, // 初始比例
             zRatio: z / this.radius,
             baseFontSize,
             baseWeight,
@@ -171,7 +175,7 @@ class WordSphereEngine {
         const animate = () => {
             if (!this.isActive) return;
 
-            // 核心修复 1：哪怕有悬停，球也绝不刹车，保持惯性与匀速漂移
+            // 无论悬停与否，背景星系绝不刹车，保持惯性与匀速漂移
             if (!this.isDragging) {
                 const speed = Math.sqrt(this.velocityX ** 2 + this.velocityY ** 2);
                 if (speed > this.targetMinSpeed) {
@@ -195,7 +199,7 @@ class WordSphereEngine {
             const colorNormal = getComputedColor('--text-normal', '#333333');
             const neutralLineColor = '128, 128, 128'; 
 
-            // 1. 更新底层逻辑系矩阵 (不受任何斥力和悬停影响，永远保持匀速转动)
+            // 1. 永远以匀速更新底层逻辑坐标系
             this.tags.forEach(tag => {
                 const x1 = tag.lx * Math.cos(this.velocityY) - tag.lz * Math.sin(this.velocityY);
                 const z1 = tag.lz * Math.cos(this.velocityY) + tag.lx * Math.sin(this.velocityY);
@@ -204,37 +208,35 @@ class WordSphereEngine {
                 tag.lx = x1; tag.ly = y1; tag.lz = z2;
             });
 
-            // 2. 物理碰撞与弹簧引擎 (计算真实的渲染位置 rx, ry, rz)
+            // 2. 磁力物理学运算：弹簧振子与避让斥力
             this.tags.forEach(tag => {
                 let targetX = tag.lx;
                 let targetY = tag.ly;
                 let targetZ = tag.lz;
 
                 if (this.hoveredTag === tag) {
-                    // 主角：脱离星系，像磁铁一样死死吸附在鼠标指针下方，并拉到最前方
+                    // 主角：脱离星系旋转，吸附到鼠标正下方，并拉到最前方
                     targetX = this.canvasMouseX;
                     targetY = this.canvasMouseY;
                     targetZ = this.radius; 
                 } else if (this.hoveredTag) {
-                    // 配角：磁极斥力场 (Avoidance) -> 水流绕礁石效果
+                    // 配角：流水避让磁场 (Repulsion Field)，防止转过来时挡住主角
                     const dx = tag.lx - this.hoveredTag.rx; 
                     const dy = tag.ly - this.hoveredTag.ry;
                     const dist = Math.sqrt(dx*dx + dy*dy);
-                    const avoidRadius = 65; // 排斥力场半径
+                    const avoidRadius = 80; 
 
                     if (dist > 0 && dist < avoidRadius) {
-                        // 根据距离呈指数级施加平滑推力，防止生硬弹跳
                         const force = Math.pow((avoidRadius - dist) / avoidRadius, 2); 
-                        targetX += (dx / dist) * force * 80;
-                        targetY += (dy / dist) * force * 80;
-                        targetZ -= force * 40; // 稍微往后压，增加三维避让感
+                        targetX += (dx / dist) * force * 90;
+                        targetY += (dy / dist) * force * 90;
+                        targetZ -= force * 40; 
                     }
                 }
 
-                // 核心：超丝滑弹簧震荡算法
-                // Stiffness 控制拉力大小，Damping 控制阻尼（越低弹得越久）
-                const stiffness = 0.12; 
-                const damping = 0.72; // 0.72 提供极其完美、果冻般的 Q 弹恢复手感
+                // 核心手感：极致 Q 弹的弹簧震荡系统
+                const stiffness = 0.10; // 柔软的拉力
+                const damping = 0.72;   // 完美的果冻阻尼
                 
                 tag.vx += (targetX - tag.rx) * stiffness;
                 tag.vy += (targetY - tag.ry) * stiffness;
@@ -249,9 +251,18 @@ class WordSphereEngine {
                 tag.rz += tag.vz;
                 
                 tag.zRatio = tag.rz / this.radius;
+
+                // JS 接管平滑缩放，悬停放大，离开后弹簧式恢复
+                let targetScale = 1;
+                if (this.hoveredTag) {
+                    if (tag.renderState === 'focused') targetScale = 1.25;
+                    else if (tag.renderState === 'co-occurring') targetScale = 1;
+                    else targetScale = 0.85; // 无关节点缩小避让
+                }
+                tag.currentScale += (targetScale - tag.currentScale) * 0.15;
             });
 
-            // 以真实的 Z 深度重新排序用于渲染遮挡
+            // 按照渲染的物理深度重新排序
             const renderList = [...this.tags].sort((a, b) => a.rz - b.rz);
 
             renderList.forEach(item => {
@@ -269,72 +280,49 @@ class WordSphereEngine {
                 this.drawConnectionLine(cx, cy, item, neutralLineColor, colorNormal, colorAccent);
             });
 
-            // 3. 渲染 DOM 与动画层级
+            // 3. 渲染 DOM 文字深度与颜色
             renderList.forEach(item => {
                 const tag = item;
-                const baseTransform = `translate(-50%, -50%) translate3d(${tag.rx}px, ${tag.ry}px, 0px)`;
                 
+                // 景深逻辑提取：颜色与透明度严格基于 Z 轴
+                let baseOpacity = 0; let blur = 0; let color = 'var(--text-faint)';
+                if (item.zRatio > 0.4) {
+                    baseOpacity = 0.95; blur = 0; color = 'var(--text-normal)'; 
+                } else if (item.zRatio > 0) {
+                    baseOpacity = 0.5 + 0.45 * (item.zRatio / 0.4); blur = 0; color = 'var(--text-muted)'; 
+                } else {
+                    baseOpacity = 0.12 + 0.38 * ((item.zRatio + 1) / 1); 
+                    blur = Math.min(2.5, Math.abs(item.zRatio) * 2.5); color = 'var(--text-faint)';
+                }
+
+                // 悬停交互覆盖
                 if (this.hoveredTag) {
                     if (tag.renderState === 'focused') {
-                        // 主角词汇：停滞、微微放大、保持原生极高清晰度
-                        tag.el.style.opacity = '1';
-                        tag.el.style.filter = 'blur(0px)';
-                        tag.el.style.transform = `${baseTransform} scale(1.25)`;
-                        tag.el.style.zIndex = '99999';
-                        tag.el.style.color = 'var(--text-normal)'; // 保持原色，不突兀变色
+                        // 主角自然提到最前，享受最清晰画质
+                        baseOpacity = 1;
+                        blur = 0;
+                    } else if (tag.renderState === 'co-occurring') {
+                        // 关联网络微微提亮
+                        color = 'var(--interactive-accent)';
+                        blur = 0;
+                        baseOpacity = Math.max(baseOpacity, 0.6);
                     } else {
-                        // 其他词汇：略微缩小、颜色变浅，景深算法继续生效
-                        const scale = (this.radius + tag.rz) / (2 * this.radius); 
-                        // 缩小 0.8 倍为背景
-                        const finalScale = (0.65 + 0.5 * scale) * 0.8; 
-                        
-                        // 透明度骤降以凸显主角
-                        let opacity = 0; let blur = 0;
-                        if (item.zRatio > 0.4) {
-                            opacity = 0.45; blur = 0; // 最前排变淡
-                        } else if (item.zRatio > 0) {
-                            opacity = 0.25; blur = 1;
-                        } else {
-                            opacity = 0.08; blur = Math.min(3.5, Math.abs(item.zRatio) * 3.5); 
-                        }
-
-                        // 保留突触网络的高亮提示
-                        if (tag.renderState === 'co-occurring') {
-                            opacity = Math.max(opacity, 0.5); // 关联词汇强行提亮
-                            tag.el.style.color = 'var(--interactive-accent)';
-                            blur = 0;
-                        } else {
-                            tag.el.style.color = 'var(--text-muted)';
-                        }
-
-                        tag.el.style.transform = `${baseTransform} scale(${finalScale})`;
-                        tag.el.style.opacity = opacity.toString();
-                        tag.el.style.filter = `blur(${blur}px)`;
-                        tag.el.style.zIndex = Math.round(tag.rz + this.radius).toString();
+                        // 无关字词隐身退晕
+                        blur = 4;
+                        baseOpacity = 0.05;
                     }
-                } else {
-                    // 全局未悬停：普通景深状态
-                    let opacity = 0; let blur = 0;
-                    if (item.zRatio > 0.4) {
-                        opacity = 0.95; blur = 0;
-                        tag.el.style.color = 'var(--text-normal)'; 
-                    } else if (item.zRatio > 0) {
-                        opacity = 0.5 + 0.45 * (item.zRatio / 0.4); blur = 0;
-                        tag.el.style.color = 'var(--text-muted)'; 
-                    } else {
-                        opacity = 0.12 + 0.38 * ((item.zRatio + 1) / 1); 
-                        blur = Math.min(2.5, Math.abs(item.zRatio) * 2.5); 
-                        tag.el.style.color = 'var(--text-faint)';
-                    }
-
-                    const scale = (this.radius + tag.rz) / (2 * this.radius); 
-                    const finalScale = 0.65 + 0.5 * scale; 
-
-                    tag.el.style.transform = `${baseTransform} scale(${finalScale})`;
-                    tag.el.style.opacity = opacity.toString();
-                    tag.el.style.filter = `blur(${blur}px)`;
-                    tag.el.style.zIndex = Math.round(tag.rz + this.radius).toString();
                 }
+
+                // 计算最终渲染缩放：原生景深缩放 × 交互弹性缩放
+                const depthScale = 0.65 + 0.5 * ((this.radius + tag.rz) / (2 * this.radius)); 
+                const finalScale = depthScale * tag.currentScale; 
+
+                const baseTransform = `translate(-50%, -50%) translate3d(${tag.rx}px, ${tag.ry}px, 0px)`;
+                tag.el.style.transform = `${baseTransform} scale(${finalScale})`;
+                tag.el.style.opacity = baseOpacity.toString();
+                tag.el.style.color = color;
+                tag.el.style.filter = `blur(${blur}px)`;
+                tag.el.style.zIndex = Math.round(tag.rz + this.radius).toString();
             });
 
             this.animationFrameId = requestAnimationFrame(animate);
@@ -344,41 +332,46 @@ class WordSphereEngine {
     }
 
     private drawConnectionLine(cx: number, cy: number, item: SphereNode, neutralRGB: string, normalColor: string, accentColor: string) {
-        let lineOpacity = 0;
-        let lineWidth = 0.4;
-        let strokeStyle = `rgba(${neutralRGB}, `;
-
-        if (this.hoveredTag) {
-            if (item.renderState === 'focused') {
-                lineOpacity = 0.35; 
-                lineWidth = 1;
-                strokeStyle = normalColor; 
-            } else if (item.renderState === 'co-occurring') {
-                lineOpacity = 0.2; 
-                lineWidth = 0.8;
-                strokeStyle = accentColor; // 连线使用高亮色
-            } else {
-                lineOpacity = 0; // 无关连线彻底隐身
-            }
+        // 1. 严格计算它在匀速运动时本该有的高级景深透明度
+        let depthOpacity = 0;
+        let depthWidth = 0.4;
+        
+        if (item.zRatio > 0) {
+            depthOpacity = 0.04 + 0.15 * item.zRatio; 
+            depthWidth = 0.4 + 0.5 * item.zRatio;
         } else {
-            if (item.zRatio > 0) {
-                lineOpacity = 0.03 + 0.12 * item.zRatio; 
-                lineWidth = 0.4 + 0.4 * item.zRatio;
-            } else {
-                lineOpacity = 0.03 * (1 - Math.abs(item.zRatio)); 
-                lineWidth = 0.4;
-            }
+            depthOpacity = 0.04 * (1 - Math.abs(item.zRatio)); 
+            depthWidth = 0.4;
         }
 
-        if (lineOpacity <= 0) return;
+        if (depthOpacity <= 0) return;
 
+        this.ctx.save();
         this.ctx.beginPath();
         this.ctx.moveTo(cx, cy);
-        // 使用渲染的物理坐标 rx ry 绘制具有弹跳感的连线
         this.ctx.lineTo(cx + item.rx, cy + item.ry);
-        this.ctx.strokeStyle = strokeStyle.includes('rgba') ? `${strokeStyle}${lineOpacity})` : strokeStyle;
-        this.ctx.lineWidth = lineWidth;
-        this.ctx.stroke();
+        this.ctx.lineWidth = depthWidth;
+
+        // 2. 悬停时：拒绝生硬加粗，完全保留原生游丝感，仅仅屏蔽无关线
+        if (this.hoveredTag) {
+            if (item.renderState === 'focused') {
+                this.ctx.strokeStyle = `rgb(${neutralRGB})`;
+                this.ctx.globalAlpha = depthOpacity; 
+            } else if (item.renderState === 'co-occurring') {
+                this.ctx.strokeStyle = accentColor;
+                this.ctx.globalAlpha = depthOpacity * 1.2; 
+            } else {
+                this.ctx.globalAlpha = 0; // 直接隐身
+            }
+        } else {
+            this.ctx.strokeStyle = `rgb(${neutralRGB})`;
+            this.ctx.globalAlpha = depthOpacity;
+        }
+
+        if (this.ctx.globalAlpha > 0) {
+            this.ctx.stroke();
+        }
+        this.ctx.restore();
     }
 
     destroy() {
@@ -555,7 +548,6 @@ class DesktopStatsHeatmapView extends ItemView {
                 const fontWeight = value > maxWordCount * 0.6 ? '700' : '400'; 
                 const filePaths = new Set(files.map(f => f.path));
 
-                // 保留高级宋体，取消原生 DOM scale 动画改由 JS 接管，提升流畅度
                 wordEl.setAttr("style", `
                     font-family: "SimSun", "STSong", "Songti SC", serif;
                     font-size: ${fontSize}px;
@@ -572,11 +564,10 @@ class DesktopStatsHeatmapView extends ItemView {
                 this.sphereEngine!.addTag(wordEl, fontSize, fontWeight, filePaths);
             });
 
-            // 核心事件：极其干净的交互派发
             this.sphereEngine.tags.forEach(tag => {
                 const node = tag;
                 node.el.addEventListener('mouseenter', () => {
-                    this.sphereEngine!.hoveredTag = node; // 核心！锁定吸附节点
+                    this.sphereEngine!.hoveredTag = node; 
                     this.sphereEngine!.tags.forEach(other => {
                         let isCoOccurring = false;
                         for (let p of other.filePaths) { if (node.filePaths.has(p)) { isCoOccurring = true; break; } }
@@ -588,7 +579,7 @@ class DesktopStatsHeatmapView extends ItemView {
                 });
                 
                 node.el.addEventListener('mouseleave', () => {
-                    this.sphereEngine!.hoveredTag = null; // 解除吸附，触发弹簧回退
+                    this.sphereEngine!.hoveredTag = null; 
                     this.sphereEngine!.tags.forEach(other => other.renderState = 'normal');
                 });
             });

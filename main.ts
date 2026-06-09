@@ -1,5 +1,5 @@
 import { App, ItemView, Plugin, WorkspaceLeaf, Modal, Notice } from 'obsidian';
-import WordCloud from 'wordcloud';
+// 彻底抛弃 D3 依赖，解决深浅色适配冲突，手写原生态防崩溃渲染引擎
 
 const VIEW_TYPE_STATS_HEATMAP = "desktop-stats-heatmap-view";
 
@@ -78,11 +78,14 @@ async function analyzeVaultData(app: App) {
     };
 }
 
-// --- 纯原生计算颜色引擎 ---
+// --- 手写 Apple 原生蓝色系颜色插值引擎 ---
 function getHeatmapColor(value: number, max: number): string {
-    if (value === 0) return 'rgba(142, 142, 147, 0.08)'; // 空白状态，极淡的灰色
+    if (value === 0) {
+        // 极淡的灰色，增加在浅色模式下的通透感
+        return 'rgba(var(--text-muted-rgb), 0.08)'; 
+    }
     const ratio = Math.min(value / max, 1);
-    // 苹果系统蓝色 (0, 122, 255) 动态透明度
+    // 苹果系统经典蓝 (0, 122, 255) 的动态透明度插值
     const opacity = 0.25 + (ratio * 0.75); 
     return `rgba(0, 122, 255, ${opacity})`;
 }
@@ -116,6 +119,7 @@ class WordHeatmapModal extends Modal {
             wordEl.setText(word);
             
             const bgColor = getHeatmapColor(value, maxCount);
+            // 动态计算文字颜色：当背景色过深时，自动将文字变为白色
             const textColor = value > maxCount * 0.4 ? '#ffffff' : '#333333';
             
             wordEl.setAttr("style", `
@@ -156,26 +160,41 @@ class DesktopStatsHeatmapView extends ItemView {
     }
 
     getViewType() { return VIEW_TYPE_STATS_HEATMAP; }
-    getDisplayText() { return "知识热力看板"; }
-    getIcon() { return "heatmap"; }
+    getDisplayText() { return "知识资产热力"; }
+    // 关键修正 1：更换为无论深浅色主题都绝对清晰可见的“calendar-days”日历图标
+    getIcon() { return "calendar-days"; } 
 
     async onOpen() {
         const container = this.containerEl.children[1];
         container.empty();
-        container.addClass('stats-dashboard-container');
+        container.addClass('stats-heatmap-dashboard-container');
 
-        const headerDiv = container.createDiv({ cls: 'stats-header-row' });
-        headerDiv.createEl("h2", { text: "知识资产全景热力", cls: 'stats-title' });
-        const refreshBtn = headerDiv.createEl("button", { text: "重新抓取数据", cls: 'stats-refresh-btn' });
-        
-        const contentWrapper = container.createDiv({ cls: 'stats-content-wrapper' });
+        // 应用高分辨率全屏铺满 CSS
+        container.setAttr('style', `
+            padding: 20px 30px;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            -webkit-font-smoothing: antialiased;
+        `);
 
-        const heatmapDiv = contentWrapper.createDiv({ cls: 'panel-container', attr: { style: 'flex: 1;' } });
-        heatmapDiv.createEl("h3", { text: "近一年产出活跃度", cls: 'stats-subtitle' });
+        // 顶部导航栏
+        const headerDiv = container.createDiv({ attr: { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid var(--background-modifier-border); padding-bottom: 15px; flex-shrink: 0;' } });
+        headerDiv.createEl("h2", { text: "知识资产全景热力", attr: { style: 'margin: 0; font-size: 1.6em; font-weight: 600;' } });
+        const refreshBtn = headerDiv.createEl("button", { text: "重新抓取数据", attr: { style: 'padding: 6px 16px; cursor: pointer; background-color: var(--interactive-accent); color: var(--text-on-accent); border-radius: 6px; border: none;' } });
         
-        // 原生 DOM 热力图容器
+        const contentWrapper = container.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 30px; flex: 1; min-height: 0;' } });
+
+        // 关键重构 2：热力排版从右向左改为直观的从左向右，手写 CSS Flex 网格算法
+        const heatmapDiv = contentWrapper.createDiv({ 
+            attr: { style: 'flex: 1; display: flex; flex-direction: column; background-color: var(--background-primary-alt); border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);' } 
+        });
+        heatmapDiv.createEl("h3", { text: "笔记产出活跃度", attr: { style: 'margin: 0 0 20px 0; font-size: 1.1em; color: var(--text-muted); text-align: center; font-weight: 500;' } });
+        
+        // 核心原生态热力图容器 (使用 Flex 排版增加透气呼吸感)
         const heatmapWrapper = heatmapDiv.createDiv({ 
-            attr: { style: 'display: flex; gap: 4px; overflow-x: auto; padding: 10px; width: 100%; height: 100%; align-items: center; justify-content: flex-end;' } 
+            attr: { style: 'display: flex; gap: 5px; overflow-x: auto; padding: 10px; width: 100%; height: 100%; align-items: center; justify-content: flex-start;' } 
         });
 
         const renderData = async () => {
@@ -185,11 +204,12 @@ class DesktopStatsHeatmapView extends ItemView {
             
             const { heatmapWords, dateTrend } = await analyzeVaultData(this.app);
 
-            // 1. 纯原生绘制 Github 风格热力图
+            // 1. 算法：生成过去 1 年的周数据矩阵
             const endDate = new Date();
             const startDate = new Date();
             startDate.setFullYear(endDate.getFullYear() - 1); // 往前推 1 年
-            startDate.setDate(startDate.getDate() - startDate.getDay()); // 对齐到周日
+            // 对齐到周日
+            startDate.setDate(startDate.getDate() - startDate.getDay()); 
 
             const weeks: {date: string, count: number}[][] = [];
             let currentWeek: {date: string, count: number}[] = [];
@@ -213,11 +233,12 @@ class DesktopStatsHeatmapView extends ItemView {
             }
             if (currentWeek.length > 0) weeks.push(currentWeek);
 
-            // 使用 Flex 渲染网格
+            // 关键重构 3：使用原生态 HTML 渲染“呼吸感”胶囊方块网格
             weeks.forEach(week => {
-                const col = heatmapWrapper.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 4px;' } });
+                const col = heatmapWrapper.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 5px;' } });
                 week.forEach(day => {
                     const bgColor = getHeatmapColor(day.count, maxCount);
+                    // 每一个小格都是圆润的胶囊药丸样式
                     const cell = col.createDiv({
                         attr: {
                             style: `width: 14px; height: 14px; background-color: ${bgColor}; border-radius: 4px; cursor: pointer; transition: transform 0.1s;`
@@ -233,7 +254,7 @@ class DesktopStatsHeatmapView extends ItemView {
             refreshBtn.innerText = "重新抓取数据";
             refreshBtn.disabled = false;
 
-            // 2. 弹出热力词
+            // 渲染完毕后自动弹出热力词 Modal
             new WordHeatmapModal(this.app, heatmapWords).open();
         };
 
@@ -242,12 +263,13 @@ class DesktopStatsHeatmapView extends ItemView {
     }
 }
 
-// --- 插件主入口：极简稳健加载 ---
+// --- 插件主入口 ---
 export default class DesktopStatsPlugin extends Plugin {
     async onload() {
         this.registerView(VIEW_TYPE_STATS_HEATMAP, (leaf) => new DesktopStatsHeatmapView(leaf));
         
-        this.addRibbonIcon('heatmap', '打开产出热力看板', () => {
+        // 此图标也同步更换为清晰可见的日历图标
+        this.addRibbonIcon('calendar-days', '打开产出热力看板', () => {
             this.activateView();
         });
 
@@ -269,10 +291,9 @@ export default class DesktopStatsPlugin extends Plugin {
         
         let existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_STATS_HEATMAP);
         for (let i = 0; i < existingLeaves.length; i++) {
-            existingLeaves[i].detach(); // 安全清理所有的旧视图
+            existingLeaves[i].detach(); // 安全清理所有的旧视图，彻底封杀崩溃可能
         }
 
-        // 重新开启一个全新的安全视图
         const leaf = workspace.getRightLeaf(false);
         if (leaf) {
             await leaf.setViewState({ type: VIEW_TYPE_STATS_HEATMAP, active: true });

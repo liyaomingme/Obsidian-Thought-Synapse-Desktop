@@ -25,7 +25,7 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
-// --- 物理级 3D 星系引擎 ---
+// --- 物理级 3D 星系引擎 (黄油级丝滑拖拽 + 宋体适配) ---
 class WordSphereEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -42,21 +42,24 @@ class WordSphereEngine {
     
     velocityX = 0.002; 
     velocityY = 0.002;
-    targetMinSpeed = 0.0015; 
-    friction = 0.94; 
+    targetMinSpeed = 0.0012; 
+    friction = 0.96; // 核心调优：增加滑行惯性阻尼，使得松手后漂移更自然持久
 
     animationFrameId: number = 0;
     isActive = true;
     resizeObserver: any; 
 
+    // 核心调优：低通滤波算法 (Low-pass Filter)，消除拖拽时的生硬感和微卡顿
     private onMouseMove = (e: MouseEvent) => {
         if (!this.isDragging) return;
         const deltaX = e.clientX - this.previousMouseX;
         const deltaY = e.clientY - this.previousMouseY;
         this.previousMouseX = e.clientX;
         this.previousMouseY = e.clientY;
-        this.velocityY = deltaX * 0.006; 
-        this.velocityX = -deltaY * 0.006; 
+        
+        // 使用 0.4 的平滑系数，将鼠标的生硬位移转化为柔和的旋转速度
+        this.velocityY = this.velocityY * 0.6 + (deltaX * 0.008) * 0.4; 
+        this.velocityX = this.velocityX * 0.6 + (-deltaY * 0.008) * 0.4; 
     };
 
     private onMouseUp = () => {
@@ -95,6 +98,11 @@ class WordSphereEngine {
     private handleResize() {
         const rect = this.container.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
+        
+        // 动态同步最新居中半径，完美适配侧边栏大小拉伸
+        const containerMinSide = Math.min(rect.width, rect.height);
+        this.radius = Math.max((containerMinSide / 2) * 0.8, 65);
+
         const dpr = window.devicePixelRatio || 1;
         this.canvas.width = rect.width * dpr;
         this.canvas.height = rect.height * dpr;
@@ -108,7 +116,8 @@ class WordSphereEngine {
         tagEl.style.left = '50%';
         tagEl.style.top = '50%';
         tagEl.style.cursor = 'pointer';
-        tagEl.style.willChange = 'transform, opacity, filter';
+        // 开启底层硬件加速，彻底消灭渲染卡顿
+        tagEl.style.willChange = 'transform, opacity, filter, color';
         tagEl.style.zIndex = '10'; 
         
         const count = this.tags.length;
@@ -158,12 +167,12 @@ class WordSphereEngine {
             if (!this.isActive) return;
 
             let baseSpeedX = 0.001; 
-            let baseSpeedY = 0.0015;
+            let baseSpeedY = 0.0012;
 
             if (!this.isDragging) {
                 if (this.isHoveringNode) {
-                    this.velocityX *= 0.8;
-                    this.velocityY *= 0.8;
+                    this.velocityX *= 0.85; // 更平滑的刹车
+                    this.velocityY *= 0.85;
                 } else {
                     const speed = Math.sqrt(this.velocityX ** 2 + this.velocityY ** 2);
                     if (speed > this.targetMinSpeed) {
@@ -195,6 +204,7 @@ class WordSphereEngine {
                 const z2 = z1 * Math.cos(this.velocityX) + tag.y * Math.sin(this.velocityX);
                 
                 tag.x = x1; tag.y = y1; tag.z = z2;
+                // 实时归一化 Z 轴比例，确保球体收缩放大时景深算法依然精准
                 return { ...tag, zRatio: tag.z / this.radius };
             }).sort((a, b) => a.z - b.z);
 
@@ -204,7 +214,7 @@ class WordSphereEngine {
             });
 
             this.ctx.beginPath();
-            this.ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+            this.ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); // 奇点变小，更加精致
             this.ctx.fillStyle = colorNormal;
             this.ctx.fill();
 
@@ -224,17 +234,17 @@ class WordSphereEngine {
                         tag.el.style.transform = `${baseTransform} scale(1.15)`;
                         tag.el.style.zIndex = '99999';
                         tag.el.style.color = 'var(--text-normal)';
-                        tag.el.style.textShadow = '0 6px 16px rgba(0,0,0,0.1)';
+                        tag.el.style.textShadow = '0 4px 12px rgba(0,0,0,0.1)';
                     } else if (tag.renderState === 'co-occurring') {
-                        tag.el.style.opacity = '0.5';
+                        tag.el.style.opacity = '0.6';
                         tag.el.style.filter = 'blur(0px)';
                         tag.el.style.transform = `${baseTransform} scale(1)`;
                         tag.el.style.zIndex = '50000';
                         tag.el.style.color = 'var(--text-muted)';
                         tag.el.style.textShadow = 'none';
                     } else {
-                        tag.el.style.opacity = '0.04';
-                        tag.el.style.filter = `blur(6px)`;
+                        tag.el.style.opacity = '0.06'; // 聚光灯下无关词汇更暗淡，拉开视觉层次
+                        tag.el.style.filter = `blur(4px)`;
                         tag.el.style.transform = `${baseTransform} scale(0.9)`;
                         tag.el.style.zIndex = '10';
                         tag.el.style.color = 'var(--text-faint)';
@@ -242,20 +252,21 @@ class WordSphereEngine {
                     }
                 } else {
                     let opacity = 0; let blur = 0;
+                    // 宋体景深优化：由于宋体笔画较细，整体提高最低可见度和对比度
                     if (item.zRatio > 0.4) {
-                        opacity = 0.9; blur = 0;
+                        opacity = 0.95; blur = 0;
                         tag.el.style.color = 'var(--text-normal)'; 
                     } else if (item.zRatio > 0) {
-                        opacity = 0.4 + 0.5 * (item.zRatio / 0.4); blur = 0;
+                        opacity = 0.5 + 0.45 * (item.zRatio / 0.4); blur = 0;
                         tag.el.style.color = 'var(--text-muted)'; 
                     } else {
-                        opacity = 0.05 + 0.2 * ((item.zRatio + 1) / 1); 
-                        blur = Math.min(3.5, Math.abs(item.zRatio) * 3.5); 
+                        opacity = 0.12 + 0.38 * ((item.zRatio + 1) / 1); // 最低透明度提至 12% 保证可读
+                        blur = Math.min(2.5, Math.abs(item.zRatio) * 2.5); 
                         tag.el.style.color = 'var(--text-faint)';
                     }
 
                     const scale = (this.radius + tag.z) / (2 * this.radius); 
-                    const finalScale = 0.6 + 0.55 * scale; 
+                    const finalScale = 0.65 + 0.5 * scale; // 整体缩放比例更克制
 
                     tag.el.style.transform = `${baseTransform} scale(${finalScale})`;
                     tag.el.style.opacity = opacity.toString();
@@ -277,7 +288,7 @@ class WordSphereEngine {
 
         if (this.isHoveringNode) {
             if (item.renderState === 'focused') {
-                lineOpacity = 0.3; 
+                lineOpacity = 0.35; 
                 lineWidth = 1;
                 strokeStyle = normalColor; 
             } else if (item.renderState === 'co-occurring') {
@@ -289,10 +300,10 @@ class WordSphereEngine {
             }
         } else {
             if (item.zRatio > 0) {
-                lineOpacity = 0.02 + 0.1 * item.zRatio; 
+                lineOpacity = 0.03 + 0.12 * item.zRatio; 
                 lineWidth = 0.4 + 0.4 * item.zRatio;
             } else {
-                lineOpacity = 0.02 * (1 - Math.abs(item.zRatio)); 
+                lineOpacity = 0.03 * (1 - Math.abs(item.zRatio)); 
                 lineWidth = 0.4;
             }
         }
@@ -373,7 +384,7 @@ class WordContextModal extends Modal {
         const { contentEl } = this; contentEl.empty();
         this.modalEl.style.cssText = 'max-width: 850px; width: 90vw; border-radius: 20px; padding: 32px; box-shadow: 0 16px 40px rgba(0,0,0,0.08);';
 
-        contentEl.createEl('h2', { text: `「${this.word}」`, attr: { style: 'margin: 0 0 10px 0; font-size: 1.8em; font-weight: 700; color: var(--interactive-accent); font-family: "SF Pro Display", "PingFang SC", sans-serif; letter-spacing: -0.5px;' } });
+        contentEl.createEl('h2', { text: `「${this.word}」`, attr: { style: 'margin: 0 0 10px 0; font-size: 1.8em; font-weight: 700; color: var(--interactive-accent); font-family: "SimSun", "STSong", "Songti SC", serif; letter-spacing: -0.5px;' } });
         contentEl.createEl('p', { text: `在 ${this.files.length} 篇笔记的正文中被提及：`, attr: { style: 'margin: 0 0 24px 0; color: var(--text-muted); font-size: 1em;' } });
 
         const listContainer = contentEl.createDiv({ attr: { style: 'max-height: 60vh; overflow-y: auto; padding-right: 12px; display: flex; flex-direction: column; gap: 16px;' } });
@@ -391,7 +402,7 @@ class WordContextModal extends Modal {
                 card.addEventListener('mouseleave', () => { card.style.borderColor = 'var(--background-modifier-border)'; card.style.transform = 'translateY(0)'; card.style.boxShadow = 'none'; });
                 card.addEventListener('click', async () => { const leaf = this.app.workspace.getLeaf(false); await leaf.openFile(file); this.close(); });
 
-                const fileTitle = card.createEl('div', { attr: { style: 'font-weight: 700; font-size: 1.1em; margin-bottom: 12px; color: var(--text-normal); font-family: "SF Pro Text", "PingFang SC", sans-serif; display: flex; align-items: center;' } });
+                const fileTitle = card.createEl('div', { attr: { style: 'font-weight: 700; font-size: 1.1em; margin-bottom: 12px; color: var(--text-normal); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; align-items: center;' } });
                 const fileIconSpan = fileTitle.createEl('span', { attr: { style: 'margin-right: 8px; opacity: 0.7;' } });
                 setIcon(fileIconSpan, 'document'); fileTitle.appendChild(document.createTextNode(file.basename));
 
@@ -425,17 +436,16 @@ class DesktopStatsHeatmapView extends ItemView {
         const container = this.containerEl.children[1]; container.empty();
         container.addClass('stats-heatmap-dashboard-container');
 
-        // 核心视觉修复 1：最外层容器完全透明，吸取侧边栏原生底色
+        // 极限压缩内边距，让侧边栏利用率最大化
         container.setAttr('style', `
-            padding: 16px 12px; display: flex; flex-direction: column; height: 100%; overflow: hidden; 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
+            padding: 8px; display: flex; flex-direction: column; height: 100%; overflow: hidden; 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-font-smoothing: antialiased; background-color: transparent;
         `);
 
-        // 标题栏稍微对齐一点
         const headerDiv = container.createDiv({ 
             attr: { 
-                style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-left: 8px; flex-shrink: 0; cursor: pointer; opacity: 0.85; transition: opacity 0.2s ease;',
+                style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; padding: 0 4px; flex-shrink: 0; cursor: pointer; opacity: 0.85; transition: opacity 0.2s ease;',
                 title: '点击重新构建突触'
             } 
         });
@@ -449,13 +459,13 @@ class DesktopStatsHeatmapView extends ItemView {
         const titleText = titleDiv.createEl("span", { 
             text: "拓扑网络", 
             attr: { 
-                style: 'margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;' 
+                // 标题也一并切换为经典的宋体衬线字风
+                style: 'margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); font-family: "SimSun", "STSong", "Songti SC", serif; letter-spacing: 0.5px;' 
             } 
         });
         
         const contentWrapper = container.createDiv({ attr: { style: 'display: flex; flex-direction: column; flex: 1; min-height: 0;' } });
         
-        // 核心视觉修复 2：画板容器彻底剥离卡片样式，无背景、无边框、无阴影，融为一体
         const heatmapDiv = contentWrapper.createDiv({ 
             attr: { style: 'flex: 1; display: flex; justify-content: center; align-items: center; background-color: transparent; overflow: hidden; position: relative;' } 
         });
@@ -472,7 +482,7 @@ class DesktopStatsHeatmapView extends ItemView {
             const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
 
             const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
-            const baseRadius = Math.max((containerMinSide / 2) * 0.75, 75);
+            const baseRadius = Math.max((containerMinSide / 2) * 0.8, 65); // 动态缩小比例，防止触碰边界
 
             this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);
 
@@ -480,15 +490,18 @@ class DesktopStatsHeatmapView extends ItemView {
                 const wordEl = document.createElement('div');
                 wordEl.innerText = word;
                 
-                const fontSize = Math.max(12, Math.min(28, 12 + (value/maxWordCount)*16));
-                const fontWeight = value > maxWordCount * 0.6 ? '800' : (value > maxWordCount * 0.3 ? '600' : '500');
+                // 宋体字号策略：13px 到 28px，克制不浮夸
+                const fontSize = Math.max(13, Math.min(28, 13 + (value/maxWordCount)*15));
+                const fontWeight = value > maxWordCount * 0.6 ? '700' : '400'; 
                 const filePaths = new Set(files.map(f => f.path));
 
+                // 核心字体替换：应用 SimSun，增加学术排版的高级感
                 wordEl.setAttr("style", `
+                    font-family: "SimSun", "STSong", "Songti SC", serif;
                     font-size: ${fontSize}px;
                     font-weight: ${fontWeight};
                     letter-spacing: -0.2px;
-                    padding: 2px;
+                    padding: 2px 4px;
                     white-space: nowrap;
                     user-select: none;
                     transition: filter 0.2s, opacity 0.2s, color 0.2s; 

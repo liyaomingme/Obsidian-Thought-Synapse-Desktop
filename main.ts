@@ -1,5 +1,4 @@
-import { App, ItemView, Plugin, WorkspaceLeaf, Modal, Notice } from 'obsidian';
-// 彻底抛弃 D3 依赖，解决深浅色适配冲突，手写原生态防崩溃渲染引擎
+import { App, ItemView, Plugin, WorkspaceLeaf, Notice } from 'obsidian';
 
 const VIEW_TYPE_STATS_HEATMAP = "desktop-stats-heatmap-view";
 
@@ -81,76 +80,11 @@ async function analyzeVaultData(app: App) {
 // --- 手写 Apple 原生蓝色系颜色插值引擎 ---
 function getHeatmapColor(value: number, max: number): string {
     if (value === 0) {
-        // 极淡的灰色，增加在浅色模式下的通透感
         return 'rgba(var(--text-muted-rgb), 0.08)'; 
     }
     const ratio = Math.min(value / max, 1);
-    // 苹果系统经典蓝 (0, 122, 255) 的动态透明度插值
     const opacity = 0.25 + (ratio * 0.75); 
     return `rgba(0, 122, 255, ${opacity})`;
-}
-
-// --- 热力词 Modal 组件 ---
-class WordHeatmapModal extends Modal {
-    words: {word: string, value: number}[];
-    
-    constructor(app: App, words: {word: string, value: number}[]) {
-        super(app);
-        this.words = words;
-    }
-
-    onOpen() {
-        let { contentEl } = this;
-        contentEl.empty();
-        
-        contentEl.createEl("h2", { 
-            text: "核心概念热力矩阵", 
-            attr: { style: "text-align: center; font-family: -apple-system, BlinkMacSystemFont, sans-serif; font-weight: 600; margin-bottom: 24px;" } 
-        });
-
-        const wordsContainer = contentEl.createDiv({ 
-            attr: { style: "display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 10px;" } 
-        });
-        
-        const maxCount = this.words.length > 0 ? this.words[0].value : 1;
-
-        this.words.forEach(({word, value}) => {
-            const wordEl = wordsContainer.createDiv();
-            wordEl.setText(word);
-            
-            const bgColor = getHeatmapColor(value, maxCount);
-            // 动态计算文字颜色：当背景色过深时，自动将文字变为白色
-            const textColor = value > maxCount * 0.4 ? '#ffffff' : '#333333';
-            
-            wordEl.setAttr("style", `
-                background-color: ${bgColor}; 
-                color: ${textColor}; 
-                padding: 6px 14px; 
-                border-radius: 16px; 
-                font-size: ${Math.max(12, Math.min(24, 12 + (value/maxCount)*12))}px;
-                font-weight: 500;
-                cursor: pointer;
-                transition: transform 0.2s ease, box-shadow 0.2s ease;
-                border: 1px solid rgba(0,0,0,0.05);
-            `);
-            
-            wordEl.addEventListener('mouseenter', () => {
-                wordEl.style.transform = 'translateY(-2px)';
-                wordEl.style.boxShadow = '0 4px 12px rgba(0, 122, 255, 0.2)';
-                new Notice(`【${word}】: 出现 ${value} 次`);
-            });
-            
-            wordEl.addEventListener('mouseleave', () => {
-                wordEl.style.transform = 'translateY(0)';
-                wordEl.style.boxShadow = 'none';
-            });
-        });
-    }
-
-    onClose() {
-        let { contentEl } = this;
-        contentEl.empty();
-    }
 }
 
 // --- 桌面端视图 ---
@@ -161,7 +95,6 @@ class DesktopStatsHeatmapView extends ItemView {
 
     getViewType() { return VIEW_TYPE_STATS_HEATMAP; }
     getDisplayText() { return "知识资产热力"; }
-    // 关键修正 1：更换为无论深浅色主题都绝对清晰可见的“calendar-days”日历图标
     getIcon() { return "calendar-days"; } 
 
     async onOpen() {
@@ -169,55 +102,66 @@ class DesktopStatsHeatmapView extends ItemView {
         container.empty();
         container.addClass('stats-heatmap-dashboard-container');
 
-        // 应用高分辨率全屏铺满 CSS
+        // 应用高分辨率全屏铺满 CSS，开启 Y 轴滚动条以容纳两大板块
         container.setAttr('style', `
-            padding: 20px 30px;
+            padding: 20px;
             display: flex;
             flex-direction: column;
             height: 100%;
+            overflow-y: auto;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
             -webkit-font-smoothing: antialiased;
         `);
 
         // 顶部导航栏
-        const headerDiv = container.createDiv({ attr: { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 25px; border-bottom: 1px solid var(--background-modifier-border); padding-bottom: 15px; flex-shrink: 0;' } });
-        headerDiv.createEl("h2", { text: "知识资产全景热力", attr: { style: 'margin: 0; font-size: 1.6em; font-weight: 600;' } });
-        const refreshBtn = headerDiv.createEl("button", { text: "重新抓取数据", attr: { style: 'padding: 6px 16px; cursor: pointer; background-color: var(--interactive-accent); color: var(--text-on-accent); border-radius: 6px; border: none;' } });
+        const headerDiv = container.createDiv({ attr: { style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid var(--background-modifier-border); padding-bottom: 15px; flex-shrink: 0;' } });
+        headerDiv.createEl("h2", { text: "知识资产全景热力", attr: { style: 'margin: 0; font-size: 1.4em; font-weight: 600;' } });
+        const refreshBtn = headerDiv.createEl("button", { text: "重新抓取", attr: { style: 'padding: 6px 14px; cursor: pointer; background-color: var(--interactive-accent); color: var(--text-on-accent); border-radius: 6px; border: none; font-size: 0.9em;' } });
         
-        const contentWrapper = container.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 30px; flex: 1; min-height: 0;' } });
+        // 核心内容区：采用 Flex Column 纵向排版两大模块
+        const contentWrapper = container.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 24px; flex: 1;' } });
 
-        // 关键重构 2：热力排版从右向左改为直观的从左向右，手写 CSS Flex 网格算法
+        // --- 模块 1：近一年产出活跃度 (网格) ---
         const heatmapDiv = contentWrapper.createDiv({ 
-            attr: { style: 'flex: 1; display: flex; flex-direction: column; background-color: var(--background-primary-alt); border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);' } 
+            attr: { style: 'display: flex; flex-direction: column; background-color: var(--background-primary-alt); border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03);' } 
         });
-        heatmapDiv.createEl("h3", { text: "笔记产出活跃度", attr: { style: 'margin: 0 0 20px 0; font-size: 1.1em; color: var(--text-muted); text-align: center; font-weight: 500;' } });
-        
-        // 核心原生态热力图容器 (使用 Flex 排版增加透气呼吸感)
+        heatmapDiv.createEl("h3", { text: "近一年产出活跃度", attr: { style: 'margin: 0 0 16px 0; font-size: 1.05em; color: var(--text-muted); text-align: center; font-weight: 500;' } });
         const heatmapWrapper = heatmapDiv.createDiv({ 
-            attr: { style: 'display: flex; gap: 5px; overflow-x: auto; padding: 10px; width: 100%; height: 100%; align-items: center; justify-content: flex-start;' } 
+            attr: { style: 'display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; width: 100%; align-items: center; justify-content: flex-start;' } 
+        });
+
+        // --- 模块 2：核心概念热力矩阵 (词汇胶囊) ---
+        const wordsDiv = contentWrapper.createDiv({ 
+            attr: { style: 'display: flex; flex-direction: column; background-color: var(--background-primary-alt); border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.03); flex: 1;' } 
+        });
+        wordsDiv.createEl("h3", { text: "核心概念热力矩阵", attr: { style: 'margin: 0 0 16px 0; font-size: 1.05em; color: var(--text-muted); text-align: center; font-weight: 500;' } });
+        const wordsWrapper = wordsDiv.createDiv({ 
+            attr: { style: 'display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; align-content: flex-start;' } 
         });
 
         const renderData = async () => {
             refreshBtn.innerText = "数据计算中...";
             refreshBtn.disabled = true;
             heatmapWrapper.empty();
+            wordsWrapper.empty();
             
             const { heatmapWords, dateTrend } = await analyzeVaultData(this.app);
 
-            // 1. 算法：生成过去 1 年的周数据矩阵
+            // ==========================================
+            // 渲染模块 1：网格热力图
+            // ==========================================
             const endDate = new Date();
             const startDate = new Date();
-            startDate.setFullYear(endDate.getFullYear() - 1); // 往前推 1 年
-            // 对齐到周日
+            startDate.setFullYear(endDate.getFullYear() - 1); 
             startDate.setDate(startDate.getDate() - startDate.getDay()); 
 
             const weeks: {date: string, count: number}[][] = [];
             let currentWeek: {date: string, count: number}[] = [];
             let currDate = new Date(startDate);
-            let maxCount = 1;
+            let maxGridCount = 1;
 
             for (const [_, count] of dateTrend.entries()) {
-                if (count > maxCount) maxCount = count;
+                if (count > maxGridCount) maxGridCount = count;
             }
 
             while (currDate <= endDate) {
@@ -225,7 +169,7 @@ class DesktopStatsHeatmapView extends ItemView {
                 const count = dateTrend.get(dateStr) || 0;
                 currentWeek.push({ date: dateStr, count });
 
-                if (currDate.getDay() === 6) { // 周六结束一周
+                if (currDate.getDay() === 6) { 
                     weeks.push(currentWeek);
                     currentWeek = [];
                 }
@@ -233,29 +177,58 @@ class DesktopStatsHeatmapView extends ItemView {
             }
             if (currentWeek.length > 0) weeks.push(currentWeek);
 
-            // 关键重构 3：使用原生态 HTML 渲染“呼吸感”胶囊方块网格
             weeks.forEach(week => {
-                const col = heatmapWrapper.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 5px;' } });
+                const col = heatmapWrapper.createDiv({ attr: { style: 'display: flex; flex-direction: column; gap: 4px;' } });
                 week.forEach(day => {
-                    const bgColor = getHeatmapColor(day.count, maxCount);
-                    // 每一个小格都是圆润的胶囊药丸样式
+                    const bgColor = getHeatmapColor(day.count, maxGridCount);
                     const cell = col.createDiv({
-                        attr: {
-                            style: `width: 14px; height: 14px; background-color: ${bgColor}; border-radius: 4px; cursor: pointer; transition: transform 0.1s;`
-                        }
+                        attr: { style: `width: 12px; height: 12px; background-color: ${bgColor}; border-radius: 3px; cursor: pointer; transition: transform 0.1s; border: 1px solid rgba(0,0,0,0.05);` }
                     });
                     cell.setAttr('title', `${day.date}: 产出 ${day.count} 篇`);
-                    
                     cell.addEventListener('mouseenter', () => cell.style.transform = 'scale(1.2)');
                     cell.addEventListener('mouseleave', () => cell.style.transform = 'scale(1)');
                 });
             });
 
-            refreshBtn.innerText = "重新抓取数据";
-            refreshBtn.disabled = false;
+            // ==========================================
+            // 渲染模块 2：胶囊词汇热力图
+            // ==========================================
+            const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
 
-            // 渲染完毕后自动弹出热力词 Modal
-            new WordHeatmapModal(this.app, heatmapWords).open();
+            heatmapWords.forEach(({word, value}) => {
+                const wordEl = wordsWrapper.createDiv();
+                wordEl.setText(word);
+                
+                const bgColor = getHeatmapColor(value, maxWordCount);
+                // 优化文字颜色：在浅色背景下使用原生文字色，深色背景下使用纯白
+                const textColor = value > maxWordCount * 0.4 ? '#ffffff' : 'var(--text-normal)';
+                
+                wordEl.setAttr("style", `
+                    background-color: ${bgColor}; 
+                    color: ${textColor}; 
+                    padding: 4px 12px; 
+                    border-radius: 14px; 
+                    font-size: ${Math.max(12, Math.min(22, 11 + (value/maxWordCount)*11))}px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    transition: transform 0.2s ease, box-shadow 0.2s ease;
+                    border: 1px solid var(--background-modifier-border);
+                `);
+                
+                wordEl.addEventListener('mouseenter', () => {
+                    wordEl.style.transform = 'translateY(-2px)';
+                    wordEl.style.boxShadow = '0 4px 8px rgba(0, 122, 255, 0.15)';
+                    new Notice(`【${word}】: 出现 ${value} 次`);
+                });
+                
+                wordEl.addEventListener('mouseleave', () => {
+                    wordEl.style.transform = 'translateY(0)';
+                    wordEl.style.boxShadow = 'none';
+                });
+            });
+
+            refreshBtn.innerText = "重新抓取";
+            refreshBtn.disabled = false;
         };
 
         refreshBtn.addEventListener('click', renderData);
@@ -268,7 +241,6 @@ export default class DesktopStatsPlugin extends Plugin {
     async onload() {
         this.registerView(VIEW_TYPE_STATS_HEATMAP, (leaf) => new DesktopStatsHeatmapView(leaf));
         
-        // 此图标也同步更换为清晰可见的日历图标
         this.addRibbonIcon('calendar-days', '打开产出热力看板', () => {
             this.activateView();
         });
@@ -291,7 +263,7 @@ export default class DesktopStatsPlugin extends Plugin {
         
         let existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_STATS_HEATMAP);
         for (let i = 0; i < existingLeaves.length; i++) {
-            existingLeaves[i].detach(); // 安全清理所有的旧视图，彻底封杀崩溃可能
+            existingLeaves[i].detach(); 
         }
 
         const leaf = workspace.getRightLeaf(false);

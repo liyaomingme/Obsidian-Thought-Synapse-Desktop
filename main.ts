@@ -25,7 +25,7 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
-// --- 物理级 3D 星系引擎 (完美响应式适配 + 流体磁斥力) ---
+// --- 物理级 3D 星系引擎 (加入全局视界动态缩放) ---
 class WordSphereEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -35,6 +35,9 @@ class WordSphereEngine {
     height: number = 0;
     tags: SphereNode[] = [];
     
+    // 全局视界缩放比例 (随侧边栏拖拽动态改变)
+    containerScale: number = 1; 
+
     isDragging = false;
     hoveredTag: SphereNode | null = null; 
     previousMouseX = 0; 
@@ -103,14 +106,16 @@ class WordSphereEngine {
         const rect = this.container.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
         
-        // 核心修复：极致响应式安全边距算法
-        // 为长单词保留左右各 38px 的绝对安全区，确保侧边栏再窄也不会被切断
-        const safeRadiusWidth = (rect.width / 2) - 38; 
+        // 极致流体计算：动态设定容器安全范围
+        const safeRadiusWidth = (rect.width / 2) - 25; // 左右预留防裁切空间
         const safeRadiusHeight = (rect.height / 2) - 20;
         let newRadius = Math.min(safeRadiusWidth, safeRadiusHeight);
-        newRadius = Math.max(newRadius, 25); // 允许收缩到极小的 25px
+        newRadius = Math.max(newRadius, 25); // 允许缩到极小尺寸
 
-        // 无缝三维矩阵重映射：当侧边栏拉伸时，让所有星星平滑跟随缩放
+        // 核心突破：生成全局缩放比例 (以 90px 正常半径为基准进行缩放)
+        // 无论拖多宽多窄，全局矩阵都会等比例放大缩小
+        this.containerScale = Math.max(0.3, Math.min(newRadius / 90, 1.3));
+
         if (this.radius > 0 && this.tags.length > 0 && this.radius !== newRadius) {
             const scaleFactor = newRadius / this.radius;
             this.tags.forEach(tag => {
@@ -232,11 +237,11 @@ class WordSphereEngine {
                     targetY = this.canvasMouseY;
                     targetZ = this.radius; 
                 } else if (this.hoveredTag) {
-                    // 核心修复：斥力场随球体半径动态自适应，防止狭窄空间下排斥力过猛
                     const dx = tag.lx - this.hoveredTag.rx; 
                     const dy = tag.ly - this.hoveredTag.ry;
                     const dist = Math.sqrt(dx*dx + dy*dy);
-                    const avoidRadius = Math.max(35, this.radius * 1.1); // 动态斥力半径
+                    // 斥力半径随侧边栏自适应动态调整，防止拥挤
+                    const avoidRadius = Math.max(35, this.radius * 1.1); 
 
                     if (dist > 0 && dist < avoidRadius) {
                         const force = Math.pow((avoidRadius - dist) / avoidRadius, 2); 
@@ -281,8 +286,9 @@ class WordSphereEngine {
                 this.drawConnectionLine(cx, cy, item, neutralLineColor, colorNormal, colorAccent);
             });
 
+            // 中心奇点大小响应式缩放
             this.ctx.beginPath();
-            this.ctx.arc(cx, cy, 2.5, 0, Math.PI * 2); 
+            this.ctx.arc(cx, cy, Math.max(1, 2.5 * this.containerScale), 0, Math.PI * 2); 
             this.ctx.fillStyle = colorNormal;
             this.ctx.fill();
 
@@ -319,7 +325,9 @@ class WordSphereEngine {
                 }
 
                 const depthScale = 0.65 + 0.5 * ((this.radius + tag.rz) / (2 * this.radius)); 
-                const finalScale = depthScale * tag.currentScale; 
+                // 核心闭环：将全局缩放矩阵 (containerScale) 乘入最终的 Scale 变换中
+                // 这保证了文字视觉体积与侧边栏宽度始终完美匹配
+                const finalScale = depthScale * tag.currentScale * this.containerScale; 
 
                 const baseTransform = `translate(-50%, -50%) translate3d(${tag.rx}px, ${tag.ry}px, 0px)`;
                 tag.el.style.transform = `${baseTransform} scale(${finalScale})`;
@@ -347,13 +355,16 @@ class WordSphereEngine {
             depthWidth = 0.4;
         }
 
+        // 连线粗细也参与全局缩放
+        depthWidth *= this.containerScale;
+
         if (depthOpacity <= 0) return;
 
         this.ctx.save();
         this.ctx.beginPath();
         this.ctx.moveTo(cx, cy);
         this.ctx.lineTo(cx + item.rx, cy + item.ry);
-        this.ctx.lineWidth = depthWidth;
+        this.ctx.lineWidth = Math.max(0.1, depthWidth);
 
         if (this.hoveredTag) {
             if (item.renderState === 'focused') {
@@ -537,13 +548,8 @@ class DesktopStatsHeatmapView extends ItemView {
             const heatmapWords = await analyzeVaultData(this.app);
             const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
 
-            // 动态读取容器安全范围，适配极端拉伸场景
-            const containerWidth = heatmapDiv.clientWidth || 250;
-            const containerHeight = heatmapDiv.clientHeight || 250;
-            const safeWidth = (containerWidth / 2) - 38;
-            const safeHeight = (containerHeight / 2) - 20;
-            let baseRadius = Math.min(safeWidth, safeHeight);
-            baseRadius = Math.max(baseRadius, 25); // 最低保底半径降至25px
+            const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
+            const baseRadius = Math.max((containerMinSide / 2) * 0.8, 25); 
 
             this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);
 

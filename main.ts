@@ -25,7 +25,7 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
-// --- 物理级 3D 星系引擎 (真实阻尼 + 拖拽交互) ---
+// --- 物理级 3D 星系引擎 ---
 class WordSphereEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -157,6 +157,9 @@ class WordSphereEngine {
         const animate = () => {
             if (!this.isActive) return;
 
+            let baseSpeedX = 0.001; 
+            let baseSpeedY = 0.0015;
+
             if (!this.isDragging) {
                 if (this.isHoveringNode) {
                     this.velocityX *= 0.8;
@@ -231,7 +234,7 @@ class WordSphereEngine {
                         tag.el.style.textShadow = 'none';
                     } else {
                         tag.el.style.opacity = '0.04';
-                        tag.el.style.filter = `blur(4px)`;
+                        tag.el.style.filter = `blur(6px)`;
                         tag.el.style.transform = `${baseTransform} scale(0.9)`;
                         tag.el.style.zIndex = '10';
                         tag.el.style.color = 'var(--text-faint)';
@@ -247,7 +250,7 @@ class WordSphereEngine {
                         tag.el.style.color = 'var(--text-muted)'; 
                     } else {
                         opacity = 0.05 + 0.2 * ((item.zRatio + 1) / 1); 
-                        blur = Math.min(2.5, Math.abs(item.zRatio) * 2.5); 
+                        blur = Math.min(3.5, Math.abs(item.zRatio) * 3.5); 
                         tag.el.style.color = 'var(--text-faint)';
                     }
 
@@ -422,16 +425,17 @@ class DesktopStatsHeatmapView extends ItemView {
         const container = this.containerEl.children[1]; container.empty();
         container.addClass('stats-heatmap-dashboard-container');
 
-        // 核心UI优化：减小内边距，完全适配半高的侧边栏
+        // 核心视觉修复 1：最外层容器完全透明，吸取侧边栏原生底色
         container.setAttr('style', `
-            padding: 12px; display: flex; flex-direction: column; height: 100%; overflow: hidden; 
+            padding: 16px 12px; display: flex; flex-direction: column; height: 100%; overflow: hidden; 
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", sans-serif;
-            -webkit-font-smoothing: antialiased; background-color: var(--background-secondary);
+            -webkit-font-smoothing: antialiased; background-color: transparent;
         `);
 
+        // 标题栏稍微对齐一点
         const headerDiv = container.createDiv({ 
             attr: { 
-                style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; flex-shrink: 0; cursor: pointer; opacity: 0.85; transition: opacity 0.2s ease;',
+                style: 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; padding-left: 8px; flex-shrink: 0; cursor: pointer; opacity: 0.85; transition: opacity 0.2s ease;',
                 title: '点击重新构建突触'
             } 
         });
@@ -439,20 +443,21 @@ class DesktopStatsHeatmapView extends ItemView {
         const titleDiv = headerDiv.createDiv({
             attr: { style: 'display: flex; align-items: center; white-space: nowrap;' }
         });
-        const iconSpan = titleDiv.createEl('span', { attr: { style: 'width: 16px; height: 16px; color: var(--text-normal); margin-right: 8px; display: flex; align-items: center;' } });
+        const iconSpan = titleDiv.createEl('span', { attr: { style: 'width: 16px; height: 16px; color: var(--text-muted); margin-right: 8px; display: flex; align-items: center;' } });
         setIcon(iconSpan, 'network'); 
         
-        // 核心UI优化：缩小标题字号，彻底融入 Obsidian 原生侧边栏风格
         const titleText = titleDiv.createEl("span", { 
             text: "拓扑网络", 
             attr: { 
-                style: 'margin: 0; font-size: 14px; font-weight: 600; color: var(--text-normal);' 
+                style: 'margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px;' 
             } 
         });
         
         const contentWrapper = container.createDiv({ attr: { style: 'display: flex; flex-direction: column; flex: 1; min-height: 0;' } });
+        
+        // 核心视觉修复 2：画板容器彻底剥离卡片样式，无背景、无边框、无阴影，融为一体
         const heatmapDiv = contentWrapper.createDiv({ 
-            attr: { style: 'flex: 1; display: flex; justify-content: center; align-items: center; background-color: var(--background-primary); border-radius: 12px; border: 1px solid var(--background-modifier-border); overflow: hidden; position: relative;' } 
+            attr: { style: 'flex: 1; display: flex; justify-content: center; align-items: center; background-color: transparent; overflow: hidden; position: relative;' } 
         });
 
         const renderData = async () => {
@@ -466,9 +471,8 @@ class DesktopStatsHeatmapView extends ItemView {
             const heatmapWords = await analyzeVaultData(this.app);
             const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
 
-            // 核心修复：适配半高侧边栏，保底半径降低至 70px，绝不超出边界
             const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
-            const baseRadius = Math.max((containerMinSide / 2) * 0.7, 70);
+            const baseRadius = Math.max((containerMinSide / 2) * 0.75, 75);
 
             this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);
 
@@ -476,9 +480,8 @@ class DesktopStatsHeatmapView extends ItemView {
                 const wordEl = document.createElement('div');
                 wordEl.innerText = word;
                 
-                // 核心UI优化：全量缩小字号，防止在侧边栏中显得拥挤
-                const fontSize = Math.max(11, Math.min(26, 11 + (value/maxWordCount)*15));
-                const fontWeight = value > maxWordCount * 0.6 ? '700' : (value > maxWordCount * 0.3 ? '600' : '500');
+                const fontSize = Math.max(12, Math.min(28, 12 + (value/maxWordCount)*16));
+                const fontWeight = value > maxWordCount * 0.6 ? '800' : (value > maxWordCount * 0.3 ? '600' : '500');
                 const filePaths = new Set(files.map(f => f.path));
 
                 wordEl.setAttr("style", `
@@ -549,15 +552,10 @@ export default class DesktopStatsPlugin extends Plugin {
         if (existingLeaves.length > 0) {
             leaf = existingLeaves[0];
         } else {
-            // ===============================================
-            // 核心突破：寻找文件列表，在它正下方劈出一块专属区域！
-            // ===============================================
             const fileExplorerLeaves = workspace.getLeavesOfType('file-explorer');
             if (fileExplorerLeaves.length > 0) {
-                // 以水平分割线切开 (即上下排列)，将拓扑网络挂载在文件列表下方
                 leaf = workspace.createLeafBySplit(fileExplorerLeaves[0], 'horizontal');
             } else {
-                // 如果用户没开文件列表，则走默认逻辑
                 leaf = workspace.getLeftLeaf(false) || workspace.getLeaf(false);
             }
             await leaf.setViewState({ type: VIEW_TYPE_STATS_HEATMAP, active: true });

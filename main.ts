@@ -30,7 +30,7 @@ class WordSphereEngine {
     canvas: HTMLCanvasElement;
     ctx: CanvasRenderingContext2D;
     radius: number;
-    initRadius: number; // 核心：记录初始基准半径，用于完美计算文字缩放比例
+    initRadius: number; 
     width: number = 0;
     height: number = 0;
     tags: SphereNode[] = [];
@@ -106,13 +106,11 @@ class WordSphereEngine {
         const rect = this.container.getBoundingClientRect();
         if (rect.width === 0 || rect.height === 0) return;
         
-        // 动态保持留白
         const safeRadiusWidth = (rect.width / 2) - 20; 
         const safeRadiusHeight = (rect.height / 2) - 20;
         let newRadius = Math.min(safeRadiusWidth, safeRadiusHeight);
-        newRadius = Math.max(newRadius, 30); // 允许缩到更小以适应高强度 UI 缩放
+        newRadius = Math.max(newRadius, 30); 
 
-        // 当尺寸变化时，不仅缩放当前物理位置，逻辑位置也必须无缝缩放
         if (this.radius > 0 && this.tags.length > 0 && this.radius !== newRadius) {
             const scaleFactor = newRadius / this.radius;
             this.tags.forEach(tag => {
@@ -216,8 +214,7 @@ class WordSphereEngine {
             const colorAccent = getComputedColor('--interactive-accent', '#007AFF');
             const neutralLineColor = '128, 128, 128'; 
 
-            // 核心：基于初始半径和当前物理半径，计算出绝对精准的字体缩放因子
-            const globalScaleFactor = this.radius / this.initRadius;
+            const globalScaleFactor = Math.max(0.4, Math.min(this.radius / this.initRadius, 1.1));
 
             this.tags.forEach(tag => {
                 const x1 = tag.lx * Math.cos(this.velocityY) - tag.lz * Math.sin(this.velocityY);
@@ -286,7 +283,6 @@ class WordSphereEngine {
             });
 
             this.ctx.beginPath();
-            // 中心奇点也会随着窗口等比例缩放
             this.ctx.arc(cx, cy, Math.max(1, 2.5 * globalScaleFactor), 0, Math.PI * 2); 
             this.ctx.fillStyle = colorNormal;
             this.ctx.fill();
@@ -300,31 +296,42 @@ class WordSphereEngine {
                 const tag = item;
                 
                 let baseOpacity = 0; let blur = 0; let color = 'var(--text-faint)';
-                if (item.zRatio > 0.4) {
-                    baseOpacity = 0.95; blur = 0; color = 'var(--text-normal)'; 
+                
+                // --- 核心优化：光学级极浅景深衰减引擎 ---
+                if (item.zRatio > 0.6) {
+                    // 正前方核心区：极致清晰，透明度 85%~100%
+                    baseOpacity = 0.85 + 0.15 * ((item.zRatio - 0.6) / 0.4);
+                    blur = 0;
+                    color = 'var(--text-normal)';
                 } else if (item.zRatio > 0) {
-                    baseOpacity = 0.5 + 0.45 * (item.zRatio / 0.4); blur = 0; color = 'var(--text-muted)'; 
+                    // 前半球两侧区：迅速变淡（25%~85%），并引入微弱失焦模糊
+                    baseOpacity = 0.25 + 0.6 * (item.zRatio / 0.6);
+                    blur = 0.8 * (1 - item.zRatio / 0.6); 
+                    color = 'var(--text-muted)';
                 } else {
-                    baseOpacity = 0.12 + 0.38 * ((item.zRatio + 1) / 1); 
-                    blur = Math.min(2.5, Math.abs(item.zRatio) * 2.5); color = 'var(--text-faint)';
+                    // 后半球背景区：几乎隐身（3%~20%），强烈失焦，彻底消除遮挡感
+                    baseOpacity = 0.03 + 0.17 * ((item.zRatio + 1) / 1);
+                    blur = 1.0 + Math.min(3.5, Math.abs(item.zRatio) * 3.5); 
+                    color = 'var(--text-faint)';
                 }
 
                 if (this.hoveredTag) {
                     if (tag.renderState === 'focused') {
                         baseOpacity = 1;
                         blur = 0;
+                        color = 'var(--text-normal)';
                     } else if (tag.renderState === 'co-occurring') {
                         color = 'var(--interactive-accent)';
                         blur = 0;
                         baseOpacity = Math.max(baseOpacity, 0.6);
                     } else {
                         blur = 4;
-                        baseOpacity = 0.05;
+                        baseOpacity = 0.04; // 悬停时无关字眼更通透
                     }
                 }
 
-                const depthScale = 0.65 + 0.5 * ((this.radius + tag.rz) / (2 * this.radius)); 
-                // 终极等比缩放矩阵：不管宿主环境怎么缩小放大，字体占据小球的物理面积比例始终锁定！
+                // 拉大前后体积反差：后半球的字比之前更小，腾出排版空间
+                const depthScale = 0.55 + 0.6 * ((this.radius + tag.rz) / (2 * this.radius)); 
                 const finalScale = depthScale * tag.currentScale * globalScaleFactor; 
 
                 const baseTransform = `translate(-50%, -50%) translate3d(${tag.rx}px, ${tag.ry}px, 0px)`;
@@ -343,17 +350,17 @@ class WordSphereEngine {
 
     private drawConnectionLine(cx: number, cy: number, item: SphereNode, neutralRGB: string, globalScaleFactor: number, normalColor: string, accentColor: string) {
         let depthOpacity = 0;
-        let depthWidth = 0.4;
+        let depthWidth = 0.3;
         
+        // 连线也匹配光学景深，背面游丝更加微弱
         if (item.zRatio > 0) {
-            depthOpacity = 0.04 + 0.15 * item.zRatio; 
-            depthWidth = 0.4 + 0.5 * item.zRatio;
+            depthOpacity = 0.02 + 0.1 * item.zRatio; 
+            depthWidth = 0.3 + 0.4 * item.zRatio;
         } else {
-            depthOpacity = 0.04 * (1 - Math.abs(item.zRatio)); 
-            depthWidth = 0.4;
+            depthOpacity = 0.02 * (1 - Math.abs(item.zRatio)); 
+            depthWidth = 0.3;
         }
 
-        // 连线粗细也跟随等比缩放
         depthWidth *= globalScaleFactor;
 
         if (depthOpacity <= 0) return;
@@ -367,10 +374,10 @@ class WordSphereEngine {
         if (this.hoveredTag) {
             if (item.renderState === 'focused') {
                 this.ctx.strokeStyle = `rgb(${neutralRGB})`;
-                this.ctx.globalAlpha = depthOpacity; 
+                this.ctx.globalAlpha = depthOpacity * 1.5; // 主角连线微提亮
             } else if (item.renderState === 'co-occurring') {
                 this.ctx.strokeStyle = accentColor;
-                this.ctx.globalAlpha = depthOpacity * 1.2; 
+                this.ctx.globalAlpha = depthOpacity * 1.5; 
             } else {
                 this.ctx.globalAlpha = 0; 
             }
@@ -546,7 +553,6 @@ class DesktopStatsHeatmapView extends ItemView {
             const heatmapWords = await analyzeVaultData(this.app);
             const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
 
-            // 获取绝对准确的初始容器可用物理空间
             const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
             const baseRadius = Math.max((containerMinSide / 2) * 0.8, 30); 
 
@@ -556,10 +562,7 @@ class DesktopStatsHeatmapView extends ItemView {
                 const wordEl = document.createElement('div');
                 wordEl.innerText = word;
                 
-                // 核心控制：以初始侧边栏宽度，计算相对动态字体基座大小
-                // 假设 baseRadius 为 100，则字体区间为 12px - 26px
-                // 假设被强行压缩到 baseRadius = 50，字体自动等比缩小为 6px - 13px
-                const minFont = Math.max(8, baseRadius * 0.12); // 底线保证最小 8px 不至不可读
+                const minFont = Math.max(8, baseRadius * 0.12); 
                 const maxFont = Math.max(16, baseRadius * 0.26);
                 const fontSize = Math.max(minFont, Math.min(maxFont, minFont + (value/maxWordCount)*(maxFont-minFont)));
                 

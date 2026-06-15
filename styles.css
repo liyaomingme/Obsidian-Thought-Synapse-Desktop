@@ -1,4 +1,4 @@
-/* 容器全屏铺满，引入苹果原生系统字体与抗锯齿渲染 */
+/* --- Base Structure (Retained from Original) --- */
 .stats-dashboard-container {
     padding: 20px 30px;
     display: flex;
@@ -10,101 +10,92 @@
     -moz-osx-font-smoothing: grayscale;
 }
 
-/* 顶部操作栏 */
-.stats-header-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 25px;
-    border-bottom: 1px solid var(--background-modifier-border);
-    padding-bottom: 15px;
-    flex-shrink: 0;
+/* ... (Your original styles for .stats-header-row, .stats-refresh-btn, .panel-container, etc., remain here) ... */
+
+/* --- Newly Added: Extracted from JS Inline Styles (To satisfy ESLint rules) --- */
+
+.stats-heatmap-dashboard-container {
+    padding: 12px 16px; 
+    display: flex; 
+    flex-direction: column; 
+    height: 100%; 
+    overflow: hidden; 
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased; 
+    background-color: transparent;
 }
 
-.stats-title {
-    margin: 0;
-    font-size: 1.6em;
-    font-weight: 600;
+/* Header interactions */
+.ts-header {
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    margin-bottom: 12px; 
+    padding: 0 4px; 
+    flex-shrink: 0; 
+    cursor: pointer; 
+    opacity: 0.85; 
+    transition: opacity 0.2s ease;
 }
+.ts-header:hover { opacity: 1; }
+.ts-header.ts-loading { opacity: 0.3; pointer-events: none; }
 
-/* 按钮：弹簧阻尼动效与质感升级 */
-.stats-refresh-btn {
-    padding: 8px 20px;
-    cursor: pointer;
-    background-color: var(--interactive-accent);
-    color: var(--text-on-accent);
-    border-radius: 8px;
-    border: none;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-    transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-}
+.ts-title-container { display: flex; align-items: center; white-space: nowrap; }
+.ts-header-icon { width: 16px; height: 16px; color: var(--text-muted); margin-right: 8px; display: flex; align-items: center; }
+.ts-header-text { margin: 0; font-size: 13px; font-weight: 600; color: var(--text-muted); font-family: "SimSun", "STSong", "Songti SC", serif; letter-spacing: 0.5px; }
 
-.stats-refresh-btn:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 122, 255, 0.3); /* 使用通用科技蓝阴影 */
-    filter: brightness(1.1);
-}
+.ts-content-wrapper { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.ts-heatmap-container { flex: 1; display: flex; justify-content: center; align-items: center; background-color: transparent; overflow: hidden; position: relative; }
 
-.stats-refresh-btn:active {
-    transform: scale(0.95);
-    box-shadow: 0 1px 2px rgba(0, 122, 255, 0.2);
-    filter: brightness(0.9);
-}
-
-/* 核心内容区：左右弹性分栏 */
-.stats-content-wrapper {
-    display: flex;
-    flex-direction: row;
-    gap: 30px;
-    flex: 1; 
-    min-height: 0; /* 保持 Flex 弹性的核心魔法 */
-}
-
-/* 面板：毛玻璃与弥散阴影 (Vibrancy) */
-.panel-container {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background-color: rgba(var(--background-primary-alt-rgb, 255, 255, 255), 0.65); /* 增加透明度兼容 */
-    backdrop-filter: blur(24px) saturate(150%);
-    -webkit-backdrop-filter: blur(24px) saturate(150%);
-    border: 1px solid rgba(142, 142, 147, 0.15); /* 适配深浅色的中性边框 */
-    border-radius: 16px;
-    padding: 24px;
-    box-shadow:
-        0 4px 24px -8px rgba(0, 0, 0, 0.1),
-        0 1px 3px rgba(0, 0, 0, 0.05);
-    transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.4s ease;
-}
-
-.panel-container:hover {
-    transform: translateY(-2px);
-    box-shadow:
-        0 8px 32px -8px rgba(0, 0, 0, 0.15),
-        0 2px 6px rgba(0, 0, 0, 0.08);
-}
-
-.stats-subtitle {
-    margin: 0 0 20px 0;
-    font-size: 1.1em;
-    color: var(--text-muted);
-    text-align: center;
-    font-weight: 500;
-}
-
-/* 画布的直接包裹层：提供相对定位基础 */
-.canvas-wrapper {
-    position: relative;
-    flex: 1;
+/* Canvas */
+.ts-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
-    min-height: 300px;
+    pointer-events: none;
+    z-index: 0;
 }
 
-/* 强制 Canvas 听从外层指挥 */
-canvas {
-    display: block;
-    width: 100% !important;
-    height: 100% !important;
+/* Cursor State */
+.ts-cursor-grabbing { cursor: grabbing !important; }
+
+/* 3D Node Representation using CSS Variables for dynamic updates */
+.ts-node {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    cursor: pointer;
+    will-change: transform, opacity, filter, color;
+    transform-origin: center center;
+    font-family: "SimSun", "STSong", "Songti SC", serif;
+    letter-spacing: -0.2px;
+    padding: 2px 4px;
+    white-space: nowrap;
+    user-select: none;
+    transition: filter 0.2s, opacity 0.2s, color 0.2s;
+    
+    /* Dynamically bound via style.setProperty in JS */
+    transform: var(--ts-transform);
+    opacity: var(--ts-opacity);
+    color: var(--ts-color);
+    filter: var(--ts-blur);
+    z-index: var(--ts-zindex);
+    font-size: var(--ts-font-size);
+    font-weight: var(--ts-font-weight);
 }
+
+/* Modal Styling */
+.ts-modal { max-width: 850px; width: 90vw; border-radius: 20px; padding: 32px; box-shadow: 0 16px 40px rgba(0,0,0,0.08); }
+.ts-modal-title { margin: 0 0 10px 0; font-size: 1.8em; font-weight: 700; color: var(--interactive-accent); font-family: "SimSun", "STSong", "Songti SC", serif; letter-spacing: -0.5px; }
+.ts-modal-subtitle { margin: 0 0 24px 0; color: var(--text-muted); font-size: 1em; }
+.ts-list-container { max-height: 60vh; overflow-y: auto; padding-right: 12px; display: flex; flex-direction: column; gap: 16px; }
+
+/* Modal Cards */
+.ts-card { background: var(--background-primary); border: 1px solid var(--background-modifier-border); border-radius: 12px; padding: 16px; cursor: pointer; transition: all 0.2s ease; }
+.ts-card:hover { border-color: var(--interactive-accent); transform: translateY(-2px); box-shadow: 0 8px 16px rgba(0, 0, 0, 0.04); }
+.ts-card-title { font-weight: 700; font-size: 1.1em; margin-bottom: 12px; color: var(--text-normal); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; display: flex; align-items: center; }
+.ts-card-icon { margin-right: 8px; opacity: 0.7; }
+.ts-snippet { font-size: 0.95em; color: var(--text-muted); line-height: 1.5; margin-bottom: 8px; background: var(--background-secondary); padding: 8px 12px; border-radius: 8px; }
+.ts-highlight { color: var(--text-normal); background-color: var(--background-modifier-hover); padding: 2px 4px; border-radius: 4px; font-weight: 600; margin: 0 2px; }

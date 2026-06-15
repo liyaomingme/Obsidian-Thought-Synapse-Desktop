@@ -1,7 +1,7 @@
 {
-  "id": "Obsidian-Thought-Synapse-Desktop",
+  "id": "thought-synapse-desktop",
   "name": "Thought Synapse (Desktop)",
-  "version": "1.6.1",
+  "version": "1.6.2",
   "minAppVersion": "1.0.0",
   "description": "A 3D interactive knowledge topology graph and word cloud engine optimized for desktop devices.",
   "author": "liyaoming",

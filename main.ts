@@ -27,7 +27,6 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
-// === 完整保留的桌面级强交互 3D 物理引擎 ===
 class WordSphereEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -83,12 +82,16 @@ class WordSphereEngine {
         
         this.canvas = activeDocument.createElement('canvas');
         this.canvas.addClass('ts-canvas');
-        // Fix canvas absolute positioning for parasitic layout
-        this.canvas.style.position = 'absolute';
-        this.canvas.style.top = '0';
-        this.canvas.style.left = '0';
-        this.canvas.style.width = '100%';
-        this.canvas.style.height = '100%';
+        
+        // 彻底修复: 使用官方要求的 setCssStyles
+        this.canvas.setCssStyles({
+            position: 'absolute',
+            top: '0',
+            left: '0',
+            width: '100%',
+            height: '100%'
+        });
+
         this.container.appendChild(this.canvas);
         
         const context = this.canvas.getContext('2d');
@@ -134,11 +137,14 @@ class WordSphereEngine {
 
     addTag(tagEl: HTMLElement, baseFontSize: number, baseWeight: string, filePaths: Set<string>) {
         tagEl.addClass('ts-node');
-        // Absolutize nodes for the parasitic container
-        tagEl.style.position = 'absolute';
-        tagEl.style.left = '50%';
-        tagEl.style.top = '50%';
-        tagEl.style.willChange = 'transform, opacity, filter, color';
+        
+        // 彻底修复: 使用官方要求的 setCssStyles
+        tagEl.setCssStyles({
+            position: 'absolute',
+            left: '50%',
+            top: '50%',
+            willChange: 'transform, opacity, filter, color'
+        });
         
         const count = this.tags.length;
         const offset = 2 / 50; 
@@ -292,16 +298,19 @@ class WordSphereEngine {
 
                 const depthScale = 0.55 + 0.6 * ((this.radius + tag.rz) / (2 * this.radius)); 
                 const finalScale = depthScale * tag.currentScale * globalScaleFactor; 
-
                 const baseTransform = `translate(-50%, -50%) translate3d(${tag.rx}px, ${tag.ry}px, 0px) scale(${finalScale})`;
-                tag.el.style.transform = baseTransform;
-                tag.el.style.opacity = baseOpacity.toString();
-                tag.el.style.color = color;
-                tag.el.style.filter = `blur(${blur}px)`;
-                tag.el.style.zIndex = Math.round(tag.rz + this.radius).toString();
-                tag.el.style.fontSize = `${tag.baseFontSize}px`;
-                tag.el.style.fontWeight = tag.baseWeight;
-                tag.el.style.cursor = 'pointer'; // Ensure cursor looks clickable
+                
+                // 彻底修复: 集中使用 setCssStyles
+                tag.el.setCssStyles({
+                    transform: baseTransform,
+                    opacity: baseOpacity.toString(),
+                    color: color,
+                    filter: `blur(${blur}px)`,
+                    zIndex: Math.round(tag.rz + this.radius).toString(),
+                    fontSize: `${tag.baseFontSize}px`,
+                    fontWeight: tag.baseWeight,
+                    cursor: 'pointer'
+                });
             });
 
             this.animationFrameId = window.requestAnimationFrame(animate);
@@ -345,7 +354,6 @@ class WordSphereEngine {
     }
 }
 
-// === 上下文溯源分析弹窗 ===
 class WordContextModal extends Modal {
     word: string; files: TFile[];
     constructor(app: App, word: string, files: TFile[]) { super(app); this.word = word; this.files = files; }
@@ -444,7 +452,6 @@ async function analyzeVaultData(app: App) {
                 .map(([word, data]) => ({ word, value: data.count, files: Array.from(data.files) }));
 }
 
-// === 核心融合：寄生于文件栏下方的桌面插件主类 ===
 export default class DesktopStatsPlugin extends Plugin {
     sphereEngine: WordSphereEngine | null = null;
     injectedContainer: HTMLElement | null = null;
@@ -454,18 +461,15 @@ export default class DesktopStatsPlugin extends Plugin {
     currentObserverTarget: HTMLElement | null = null;
 
     async onload() {
-        // 移除原有的 ItemView 注册，改为纯后台寄生模式
         this.app.workspace.onLayoutReady(async () => {
             this.cachedWords = await analyzeVaultData(this.app);
             this.observeAndInject();
         });
 
-        // 监听视图变动，确保即使拖拽、折叠侧边栏，星系依然牢牢吸附
         this.registerEvent(this.app.workspace.on('layout-change', () => {
             this.observeAndInject();
         }));
 
-        // 添加一个手动刷新命令，便于用户随时重建星云
         this.addCommand({ 
             id: 'refresh-topology-network', 
             name: '刷新拓扑网络数据', 
@@ -491,7 +495,6 @@ export default class DesktopStatsPlugin extends Plugin {
     
     observeAndInject() {
         try {
-            // 精准定位左侧边栏的文件树容器
             const fileExplorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
             if (fileExplorerLeaves.length === 0) return; 
 
@@ -503,8 +506,9 @@ export default class DesktopStatsPlugin extends Plugin {
                 this.buildContainer(navContainer);
             }
 
-            if (!navContainer.contains(this.injectedContainer!)) {
-                navContainer.appendChild(this.injectedContainer!);
+            // 彻底修复: 移除不必要的非空断言 (!)
+            if (this.injectedContainer && !navContainer.contains(this.injectedContainer)) {
+                navContainer.appendChild(this.injectedContainer);
             }
 
             if (this.currentObserverTarget !== navContainer) {
@@ -543,7 +547,6 @@ export default class DesktopStatsPlugin extends Plugin {
         const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
         const baseRadius = Math.max((containerMinSide / 2) * 0.8, 45); 
 
-        // 实例化完整的桌面级交互引擎
         this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);
 
         heatmapWords.forEach(({word, value, files}) => {
@@ -557,7 +560,6 @@ export default class DesktopStatsPlugin extends Plugin {
             const fontWeight = value > maxWordCount * 0.6 ? '700' : '400'; 
             const filePaths = new Set(files.map(f => f.path));
 
-            // 绑定点击事件：打开上下文弹窗
             wordEl.addEventListener('click', () => {
                 new WordContextModal(this.app, word, files).open();
             });
@@ -565,7 +567,6 @@ export default class DesktopStatsPlugin extends Plugin {
             this.sphereEngine!.addTag(wordEl, fontSize, fontWeight, filePaths);
         });
 
-        // 绑定鼠标悬停共现分析逻辑
         this.sphereEngine.tags.forEach(tag => {
             const node = tag;
             node.el.addEventListener('mouseenter', () => {

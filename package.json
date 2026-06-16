@@ -1,21 +1,22 @@
 {
-  "name": "Desktop-WordCloud-Trends",
-  "version": "2.3.0",
-  "description": "Desktop WordCloud & Trends for Obsidian",
+  "name": "thought-synapse-desktop",
+  "version": "1.6.9",
+  "description": "A 3D interactive knowledge topology graph engine.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
     "build": "node esbuild.config.mjs production"
   },
-  "dependencies": {
-    "wordcloud": "^1.2.2"
-  },
+  "author": "Li Yaoming",
+  "license": "MIT",
   "devDependencies": {
-    "@types/node": "^18.0.0",
-    "builtin-modules": "^3.3.0",
+    "@types/node": "18.11.0",
     "esbuild": "0.17.3",
     "obsidian": "latest",
     "tslib": "2.4.0",
-    "typescript": "4.9.5"
+    "typescript": "4.7.4"
+  },
+  "dependencies": {
+    "wordcloud": "1.2.2"
   }
 }

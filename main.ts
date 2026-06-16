@@ -1,6 +1,4 @@
-import { App, ItemView, Plugin, WorkspaceLeaf, Modal, TFile, setIcon } from 'obsidian';
-
-const VIEW_TYPE_STATS_HEATMAP = "desktop-stats-heatmap-view";
+import { App, Plugin, Modal, TFile, setIcon } from 'obsidian';
 
 const STOP_WORDS = new Set([
     'the', 'and', 'for', 'that', 'this', 'with', 'from', 'https', 'com', 'org', 
@@ -12,20 +10,9 @@ const STOP_WORDS = new Set([
     '各位', '谢谢', '由于', '其实', '只要', '目前', '开始'
 ]);
 
-interface SegmentData {
-    segment: string;
-    isWordLike: boolean;
-}
-
-interface IntlSegmenter {
-    segment(input: string): Iterable<SegmentData>;
-}
-
-interface ResizeObserver {
-    observe(target: Element): void;
-    unobserve(target: Element): void;
-    disconnect(): void;
-}
+interface SegmentData { segment: string; isWordLike: boolean; }
+interface IntlSegmenter { segment(input: string): Iterable<SegmentData>; }
+interface ResizeObserver { observe(target: Element): void; unobserve(target: Element): void; disconnect(): void; }
 
 interface SphereNode {
     el: HTMLElement;
@@ -40,6 +27,7 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
+// === 完整保留的桌面级强交互 3D 物理引擎 ===
 class WordSphereEngine {
     container: HTMLElement;
     canvas: HTMLCanvasElement;
@@ -95,6 +83,12 @@ class WordSphereEngine {
         
         this.canvas = activeDocument.createElement('canvas');
         this.canvas.addClass('ts-canvas');
+        // Fix canvas absolute positioning for parasitic layout
+        this.canvas.style.position = 'absolute';
+        this.canvas.style.top = '0';
+        this.canvas.style.left = '0';
+        this.canvas.style.width = '100%';
+        this.canvas.style.height = '100%';
         this.container.appendChild(this.canvas);
         
         const context = this.canvas.getContext('2d');
@@ -118,17 +112,13 @@ class WordSphereEngine {
         const safeRadiusWidth = (rect.width / 2) - 20; 
         const safeRadiusHeight = (rect.height / 2) - 20;
         let newRadius = Math.min(safeRadiusWidth, safeRadiusHeight);
-        newRadius = Math.max(newRadius, 30); 
+        newRadius = Math.max(newRadius, 40); 
 
         if (this.radius > 0 && this.tags.length > 0 && this.radius !== newRadius) {
             const scaleFactor = newRadius / this.radius;
             this.tags.forEach(tag => {
-                tag.lx *= scaleFactor;
-                tag.ly *= scaleFactor;
-                tag.lz *= scaleFactor;
-                tag.rx *= scaleFactor;
-                tag.ry *= scaleFactor;
-                tag.rz *= scaleFactor;
+                tag.lx *= scaleFactor; tag.ly *= scaleFactor; tag.lz *= scaleFactor;
+                tag.rx *= scaleFactor; tag.ry *= scaleFactor; tag.rz *= scaleFactor;
             });
         }
         
@@ -144,6 +134,11 @@ class WordSphereEngine {
 
     addTag(tagEl: HTMLElement, baseFontSize: number, baseWeight: string, filePaths: Set<string>) {
         tagEl.addClass('ts-node');
+        // Absolutize nodes for the parasitic container
+        tagEl.style.position = 'absolute';
+        tagEl.style.left = '50%';
+        tagEl.style.top = '50%';
+        tagEl.style.willChange = 'transform, opacity, filter, color';
         
         const count = this.tags.length;
         const offset = 2 / 50; 
@@ -179,7 +174,6 @@ class WordSphereEngine {
             this.previousMouseY = e.clientY;
             this.container.addClass('ts-cursor-grabbing');
         });
-
         activeDocument.addEventListener('mousemove', this.onMouseMove);
         activeDocument.addEventListener('mouseup', this.onMouseUp);
     }
@@ -198,15 +192,12 @@ class WordSphereEngine {
             if (!this.isDragging) {
                 const speed = Math.sqrt(this.velocityX ** 2 + this.velocityY ** 2);
                 if (speed > this.targetMinSpeed) {
-                    this.velocityX *= this.friction; 
-                    this.velocityY *= this.friction;
+                    this.velocityX *= this.friction; this.velocityY *= this.friction;
                 } else if (speed > 0 && speed < this.targetMinSpeed) {
                     const ratio = this.targetMinSpeed / speed;
-                    this.velocityX *= ratio;
-                    this.velocityY *= ratio;
+                    this.velocityX *= ratio; this.velocityY *= ratio;
                 } else if (speed === 0) {
-                    this.velocityX = this.targetMinSpeed;
-                    this.velocityY = this.targetMinSpeed;
+                    this.velocityX = this.targetMinSpeed; this.velocityY = this.targetMinSpeed;
                 }
             }
 
@@ -229,14 +220,10 @@ class WordSphereEngine {
             });
 
             this.tags.forEach(tag => {
-                let targetX = tag.lx;
-                let targetY = tag.ly;
-                let targetZ = tag.lz;
+                let targetX = tag.lx; let targetY = tag.ly; let targetZ = tag.lz;
 
                 if (this.hoveredTag === tag) {
-                    targetX = this.canvasMouseX;
-                    targetY = this.canvasMouseY;
-                    targetZ = this.radius; 
+                    targetX = this.canvasMouseX; targetY = this.canvasMouseY; targetZ = this.radius; 
                 } else if (this.hoveredTag) {
                     const dx = tag.lx - this.hoveredTag.rx; 
                     const dy = tag.ly - this.hoveredTag.ry;
@@ -253,21 +240,10 @@ class WordSphereEngine {
                     }
                 }
 
-                const stiffness = 0.10; 
-                const damping = 0.72; 
-                
-                tag.vx += (targetX - tag.rx) * stiffness;
-                tag.vy += (targetY - tag.ry) * stiffness;
-                tag.vz += (targetZ - tag.rz) * stiffness;
-                
-                tag.vx *= damping;
-                tag.vy *= damping;
-                tag.vz *= damping;
-                
-                tag.rx += tag.vx;
-                tag.ry += tag.vy;
-                tag.rz += tag.vz;
-                
+                const stiffness = 0.10; const damping = 0.72; 
+                tag.vx += (targetX - tag.rx) * stiffness; tag.vy += (targetY - tag.ry) * stiffness; tag.vz += (targetZ - tag.rz) * stiffness;
+                tag.vx *= damping; tag.vy *= damping; tag.vz *= damping;
+                tag.rx += tag.vx; tag.ry += tag.vy; tag.rz += tag.vz;
                 tag.zRatio = tag.rz / this.radius;
 
                 let targetScale = 1;
@@ -298,50 +274,34 @@ class WordSphereEngine {
 
             renderList.forEach(item => {
                 const tag = item;
-                
                 let baseOpacity = 0; let blur = 0; let color = 'var(--text-faint)';
                 
                 if (item.zRatio > 0.6) {
-                    baseOpacity = 0.85 + 0.15 * ((item.zRatio - 0.6) / 0.4);
-                    blur = 0;
-                    color = 'var(--text-normal)';
+                    baseOpacity = 0.85 + 0.15 * ((item.zRatio - 0.6) / 0.4); blur = 0; color = 'var(--text-normal)';
                 } else if (item.zRatio > 0) {
-                    baseOpacity = 0.25 + 0.6 * (item.zRatio / 0.6);
-                    blur = 0.8 * (1 - item.zRatio / 0.6); 
-                    color = 'var(--text-muted)';
+                    baseOpacity = 0.25 + 0.6 * (item.zRatio / 0.6); blur = 0.8 * (1 - item.zRatio / 0.6); color = 'var(--text-muted)';
                 } else {
-                    baseOpacity = 0.03 + 0.17 * ((item.zRatio + 1) / 1);
-                    blur = 1.0 + Math.min(3.5, Math.abs(item.zRatio) * 3.5); 
-                    color = 'var(--text-faint)';
+                    baseOpacity = 0.03 + 0.17 * ((item.zRatio + 1) / 1); blur = 1.0 + Math.min(3.5, Math.abs(item.zRatio) * 3.5); color = 'var(--text-faint)';
                 }
 
                 if (this.hoveredTag) {
-                    if (tag.renderState === 'focused') {
-                        baseOpacity = 1;
-                        blur = 0;
-                        color = 'var(--text-normal)';
-                    } else if (tag.renderState === 'co-occurring') {
-                        color = 'var(--interactive-accent)';
-                        blur = 0;
-                        baseOpacity = Math.max(baseOpacity, 0.6);
-                    } else {
-                        blur = 4;
-                        baseOpacity = 0.04;
-                    }
+                    if (tag.renderState === 'focused') { baseOpacity = 1; blur = 0; color = 'var(--text-normal)'; } 
+                    else if (tag.renderState === 'co-occurring') { color = 'var(--interactive-accent)'; blur = 0; baseOpacity = Math.max(baseOpacity, 0.6); } 
+                    else { blur = 4; baseOpacity = 0.04; }
                 }
 
                 const depthScale = 0.55 + 0.6 * ((this.radius + tag.rz) / (2 * this.radius)); 
                 const finalScale = depthScale * tag.currentScale * globalScaleFactor; 
 
                 const baseTransform = `translate(-50%, -50%) translate3d(${tag.rx}px, ${tag.ry}px, 0px) scale(${finalScale})`;
-                
-                tag.el.style.setProperty('--ts-transform', baseTransform);
-                tag.el.style.setProperty('--ts-opacity', baseOpacity.toString());
-                tag.el.style.setProperty('--ts-color', color);
-                tag.el.style.setProperty('--ts-blur', `blur(${blur}px)`);
-                tag.el.style.setProperty('--ts-zindex', Math.round(tag.rz + this.radius).toString());
-                tag.el.style.setProperty('--ts-font-size', `${tag.baseFontSize}px`);
-                tag.el.style.setProperty('--ts-font-weight', tag.baseWeight);
+                tag.el.style.transform = baseTransform;
+                tag.el.style.opacity = baseOpacity.toString();
+                tag.el.style.color = color;
+                tag.el.style.filter = `blur(${blur}px)`;
+                tag.el.style.zIndex = Math.round(tag.rz + this.radius).toString();
+                tag.el.style.fontSize = `${tag.baseFontSize}px`;
+                tag.el.style.fontWeight = tag.baseWeight;
+                tag.el.style.cursor = 'pointer'; // Ensure cursor looks clickable
             });
 
             this.animationFrameId = window.requestAnimationFrame(animate);
@@ -351,19 +311,11 @@ class WordSphereEngine {
     }
 
     private drawConnectionLine(cx: number, cy: number, item: SphereNode, neutralRGB: string, globalScaleFactor: number, normalColor: string, accentColor: string) {
-        let depthOpacity = 0;
-        let depthWidth = 0.3;
-        
-        if (item.zRatio > 0) {
-            depthOpacity = 0.02 + 0.1 * item.zRatio; 
-            depthWidth = 0.3 + 0.4 * item.zRatio;
-        } else {
-            depthOpacity = 0.02 * (1 - Math.abs(item.zRatio)); 
-            depthWidth = 0.3;
-        }
+        let depthOpacity = 0; let depthWidth = 0.3;
+        if (item.zRatio > 0) { depthOpacity = 0.02 + 0.1 * item.zRatio; depthWidth = 0.3 + 0.4 * item.zRatio; } 
+        else { depthOpacity = 0.02 * (1 - Math.abs(item.zRatio)); depthWidth = 0.3; }
 
         depthWidth *= globalScaleFactor;
-
         if (depthOpacity <= 0) return;
 
         this.ctx.save();
@@ -373,23 +325,14 @@ class WordSphereEngine {
         this.ctx.lineWidth = Math.max(0.1, depthWidth);
 
         if (this.hoveredTag) {
-            if (item.renderState === 'focused') {
-                this.ctx.strokeStyle = `rgb(${neutralRGB})`;
-                this.ctx.globalAlpha = depthOpacity * 1.5;
-            } else if (item.renderState === 'co-occurring') {
-                this.ctx.strokeStyle = accentColor;
-                this.ctx.globalAlpha = depthOpacity * 1.5; 
-            } else {
-                this.ctx.globalAlpha = 0; 
-            }
+            if (item.renderState === 'focused') { this.ctx.strokeStyle = `rgb(${neutralRGB})`; this.ctx.globalAlpha = depthOpacity * 1.5; } 
+            else if (item.renderState === 'co-occurring') { this.ctx.strokeStyle = accentColor; this.ctx.globalAlpha = depthOpacity * 1.5; } 
+            else { this.ctx.globalAlpha = 0; }
         } else {
-            this.ctx.strokeStyle = `rgb(${neutralRGB})`;
-            this.ctx.globalAlpha = depthOpacity;
+            this.ctx.strokeStyle = `rgb(${neutralRGB})`; this.ctx.globalAlpha = depthOpacity;
         }
 
-        if (this.ctx.globalAlpha > 0) {
-            this.ctx.stroke();
-        }
+        if (this.ctx.globalAlpha > 0) this.ctx.stroke();
         this.ctx.restore();
     }
 
@@ -402,56 +345,7 @@ class WordSphereEngine {
     }
 }
 
-async function analyzeVaultData(app: App) {
-    const files = app.vault.getMarkdownFiles();
-    const wordData = new Map<string, { count: number, files: Set<TFile> }>();
-
-    for (const file of files) {
-        const content = await app.vault.cachedRead(file);
-        const cleanText = content
-            .replace(new RegExp("`{3}[\\s\\S]*?`{3}", "g"), ' ') 
-            .replace(/---[\s\S]*?---/, ' ')  
-            .replace(/<[^>]*>?/gm, ' ')      
-            .replace(/https?:\/\/[^\s]+/g, ' ') 
-            .replace(/[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)/g, ' ') 
-            .replace(/[0-9a-fA-F]{8,}/g, ' ') 
-            .replace(/[^\u4e00-\u9fa5a-zA-Z]/g, ' '); 
-
-        let segments: SegmentData[] = [];
-        
-        const intlNamespace = (window as unknown as { Intl: { Segmenter: new (locales: string, options: { granularity: string }) => IntlSegmenter } }).Intl;
-        if (intlNamespace && intlNamespace.Segmenter) {
-            const segmenter = new intlNamespace.Segmenter('zh-CN', { granularity: 'word' });
-            const iterator = segmenter.segment(cleanText);
-            segments = Array.from(iterator);
-        } else {
-            const fallbackWords = cleanText.match(/[\u4e00-\u9fa5]{2,}|\b[a-zA-Z]{3,}\b/g) || [];
-            segments = fallbackWords.map(w => ({ segment: w, isWordLike: true }));
-        }
-
-        for (const { segment, isWordLike } of segments) {
-            if (!isWordLike) continue; 
-            const w = segment.toLowerCase().trim();
-            if (STOP_WORDS.has(w)) continue;
-
-            const isChinese = /[\u4e00-\u9fa5]/.test(w);
-            if ((isChinese && w.length >= 2) || (!isChinese && w.length >= 3 && w.length <= 20)) {
-                if (!wordData.has(w)) {
-                    wordData.set(w, { count: 0, files: new Set() });
-                }
-                const entry = wordData.get(w)!;
-                entry.count++;
-                entry.files.add(file);
-            }
-        }
-    }
-
-    return Array.from(wordData.entries())
-                .sort((a, b) => b[1].count - a[1].count)
-                .slice(0, 45) 
-                .map(([word, data]) => ({ word, value: data.count, files: Array.from(data.files) }));
-}
-
+// === 上下文溯源分析弹窗 ===
 class WordContextModal extends Modal {
     word: string; files: TFile[];
     constructor(app: App, word: string, files: TFile[]) { super(app); this.word = word; this.files = files; }
@@ -459,7 +353,6 @@ class WordContextModal extends Modal {
     async onOpen() {
         const { contentEl } = this; contentEl.empty();
         this.modalEl.addClass('ts-modal');
-
         contentEl.createEl('h2', { text: `「${this.word}」`, cls: 'ts-modal-title' });
         contentEl.createEl('p', { text: `在 ${this.files.length} 篇笔记的正文中被提及：`, cls: 'ts-modal-subtitle' });
 
@@ -474,8 +367,6 @@ class WordContextModal extends Modal {
 
             if (matches.length > 0) {
                 const card = listContainer.createDiv({ cls: 'ts-card' });
-                
-                // 彻底修复：用闭包包裹 async 逻辑，解决传入 async 到同步 listener 的报错
                 card.addEventListener('click', () => { 
                     void (async () => {
                         const leaf = this.app.workspace.getLeaf('tab'); 
@@ -495,9 +386,8 @@ class WordContextModal extends Modal {
                     const parts = match.split(new RegExp(`(${safeWord})`, 'gi'));
                     snippetDiv.appendChild(activeDocument.createTextNode('"...'));
                     parts.forEach(part => {
-                        if (part.toLowerCase() === this.word.toLowerCase()) {
-                            snippetDiv.createEl('span', { text: part, cls: 'ts-highlight' });
-                        } else { snippetDiv.appendChild(activeDocument.createTextNode(part)); }
+                        if (part.toLowerCase() === this.word.toLowerCase()) snippetDiv.createEl('span', { text: part, cls: 'ts-highlight' });
+                        else snippetDiv.appendChild(activeDocument.createTextNode(part)); 
                     });
                     snippetDiv.appendChild(activeDocument.createTextNode('..."'));
                 }
@@ -507,129 +397,195 @@ class WordContextModal extends Modal {
     onClose() { this.contentEl.empty(); }
 }
 
-class DesktopStatsHeatmapView extends ItemView {
-    sphereEngine: WordSphereEngine | null = null;
-    
-    constructor(leaf: WorkspaceLeaf) { super(leaf); }
-    getViewType() { return VIEW_TYPE_STATS_HEATMAP; }
-    getDisplayText() { return "拓扑网络"; }
-    getIcon() { return "network"; } 
+async function analyzeVaultData(app: App) {
+    const files = app.vault.getMarkdownFiles();
+    const wordData = new Map<string, { count: number, files: Set<TFile> }>();
 
-    async onOpen() {
-        const container = this.containerEl.children[1]; container.empty();
-        container.addClass('stats-heatmap-dashboard-container');
+    for (const file of files) {
+        const content = await app.vault.cachedRead(file);
+        const cleanText = content
+            .replace(new RegExp("`{3}[\\s\\S]*?`{3}", "g"), ' ') 
+            .replace(/---[\s\S]*?---/, ' ')  
+            .replace(/<[^>]*>?/gm, ' ')      
+            .replace(/https?:\/\/[^\s]+/g, ' ') 
+            .replace(/[-a-zA-Z0-9@:%._+~#=]{1,256}\.[a-zA-Z0-9()]{1,6}\b([-a-zA-Z0-9()@:%_+.~#?&//=]*)/g, ' ') 
+            .replace(/[0-9a-fA-F]{8,}/g, ' ') 
+            .replace(/[^\u4e00-\u9fa5a-zA-Z]/g, ' '); 
 
-        const headerDiv = container.createDiv({ cls: 'ts-header', attr: { title: '点击重新构建突触' } });
+        let segments: SegmentData[] = [];
+        const intlNamespace = (window as unknown as { Intl: { Segmenter: new (locales: string, options: { granularity: string }) => IntlSegmenter } }).Intl;
         
-        const titleDiv = headerDiv.createDiv({ cls: 'ts-title-container' });
-        const iconSpan = titleDiv.createEl('span', { cls: 'ts-header-icon' });
-        setIcon(iconSpan, 'network'); 
-        
-        const titleText = titleDiv.createEl("span", { text: "拓扑网络", cls: 'ts-header-text' });
-        
-        const contentWrapper = container.createDiv({ cls: 'ts-content-wrapper' });
-        const heatmapDiv = contentWrapper.createDiv({ cls: 'ts-heatmap-container' });
+        if (intlNamespace && intlNamespace.Segmenter) {
+            const segmenter = new intlNamespace.Segmenter('zh-CN', { granularity: 'word' });
+            segments = Array.from(segmenter.segment(cleanText));
+        } else {
+            const fallbackWords = cleanText.match(/[\u4e00-\u9fa5]{2,}|\b[a-zA-Z]{3,}\b/g) || [];
+            segments = fallbackWords.map(w => ({ segment: w, isWordLike: true }));
+        }
 
-        const renderData = async () => {
-            headerDiv.addClass('ts-loading');
-            titleText.innerText = "构建中...";
+        for (const { segment, isWordLike } of segments) {
+            if (!isWordLike) continue; 
+            const w = segment.toLowerCase().trim();
+            if (STOP_WORDS.has(w)) continue;
 
-            if (this.sphereEngine) this.sphereEngine.destroy();
-            heatmapDiv.empty();
-            
-            const heatmapWords = await analyzeVaultData(this.app);
-            const maxWordCount = heatmapWords.length > 0 ? heatmapWords[0].value : 1;
-
-            const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
-            const baseRadius = Math.max((containerMinSide / 2) * 0.8, 30); 
-
-            this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);
-
-            heatmapWords.forEach(({word, value, files}) => {
-                const wordEl = activeDocument.createElement('div');
-                wordEl.innerText = word;
-                
-                const minFont = Math.max(8, baseRadius * 0.12); 
-                const maxFont = Math.max(16, baseRadius * 0.26);
-                const fontSize = Math.max(minFont, Math.min(maxFont, minFont + (value/maxWordCount)*(maxFont-minFont)));
-                
-                const fontWeight = value > maxWordCount * 0.6 ? '700' : '400'; 
-                const filePaths = new Set(files.map(f => f.path));
-
-                wordEl.addEventListener('click', () => new WordContextModal(this.app, word, files).open());
-                this.sphereEngine!.addTag(wordEl, fontSize, fontWeight, filePaths);
-            });
-
-            this.sphereEngine.tags.forEach(tag => {
-                const node = tag;
-                node.el.addEventListener('mouseenter', () => {
-                    this.sphereEngine!.hoveredTag = node; 
-                    this.sphereEngine!.tags.forEach(other => {
-                        let isCoOccurring = false;
-                        for (let p of other.filePaths) { if (node.filePaths.has(p)) { isCoOccurring = true; break; } }
-
-                        if (other === node) other.renderState = 'focused';
-                        else if (isCoOccurring) other.renderState = 'co-occurring';
-                        else other.renderState = 'dimmed';
-                    });
-                });
-                
-                node.el.addEventListener('mouseleave', () => {
-                    this.sphereEngine!.hoveredTag = null; 
-                    this.sphereEngine!.tags.forEach(other => other.renderState = 'normal');
-                });
-            });
-
-            this.sphereEngine.startAnimation();
-
-            headerDiv.removeClass('ts-loading');
-            titleText.innerText = "拓扑网络";
-        };
-
-        headerDiv.addEventListener('click', () => { renderData().catch(console.error); });
-        window.setTimeout(() => { renderData().catch(console.error); }, 200); 
+            const isChinese = /[\u4e00-\u9fa5]/.test(w);
+            if ((isChinese && w.length >= 2) || (!isChinese && w.length >= 3 && w.length <= 20)) {
+                if (!wordData.has(w)) wordData.set(w, { count: 0, files: new Set() });
+                const entry = wordData.get(w)!;
+                entry.count++;
+                entry.files.add(file);
+            }
+        }
     }
 
-    async onClose() { 
-        if (this.sphereEngine) this.sphereEngine.destroy(); 
-    }
+    return Array.from(wordData.entries())
+                .sort((a, b) => b[1].count - a[1].count)
+                .slice(0, 45) 
+                .map(([word, data]) => ({ word, value: data.count, files: Array.from(data.files) }));
 }
 
+// === 核心融合：寄生于文件栏下方的桌面插件主类 ===
 export default class DesktopStatsPlugin extends Plugin {
+    sphereEngine: WordSphereEngine | null = null;
+    injectedContainer: HTMLElement | null = null;
+    cachedWords: {word: string, value: number, files: TFile[]}[] | null = null;
+    
+    mutationObserver: MutationObserver | null = null;
+    currentObserverTarget: HTMLElement | null = null;
+
     async onload() {
-        this.registerView(VIEW_TYPE_STATS_HEATMAP, (leaf) => new DesktopStatsHeatmapView(leaf));
-        
-        // 彻底修复：确保每一个异步调用都有 .catch 来捕获错误，满足极其严苛的代码规范
-        this.addRibbonIcon('network', '打开拓扑网络', () => { 
-            this.activateView().catch(console.error); 
+        // 移除原有的 ItemView 注册，改为纯后台寄生模式
+        this.app.workspace.onLayoutReady(async () => {
+            this.cachedWords = await analyzeVaultData(this.app);
+            this.observeAndInject();
         });
-        
+
+        // 监听视图变动，确保即使拖拽、折叠侧边栏，星系依然牢牢吸附
+        this.registerEvent(this.app.workspace.on('layout-change', () => {
+            this.observeAndInject();
+        }));
+
+        // 添加一个手动刷新命令，便于用户随时重建星云
         this.addCommand({ 
-            id: 'open-typographic-insights', 
-            name: '打开拓扑网络', 
+            id: 'refresh-topology-network', 
+            name: '刷新拓扑网络数据', 
             callback: () => { 
-                this.activateView().catch(console.error); 
+                void (async () => {
+                    this.cachedWords = await analyzeVaultData(this.app);
+                    if (this.injectedContainer) {
+                        this.injectedContainer.remove();
+                        this.injectedContainer = null;
+                    }
+                    this.observeAndInject();
+                })();
             } 
         });
     }
     
-    onunload() { }
+    onunload() { 
+        if (this.sphereEngine) this.sphereEngine.destroy();
+        if (this.injectedContainer) this.injectedContainer.remove();
+        if (this.mutationObserver) this.mutationObserver.disconnect();
+        this.cachedWords = null;
+    }
     
-    async activateView() {
-        const { workspace } = this.app;
-        let existingLeaves = workspace.getLeavesOfType(VIEW_TYPE_STATS_HEATMAP);
-        let leaf: WorkspaceLeaf;
-        
-        if (existingLeaves.length > 0) {
-            leaf = existingLeaves[0];
-        } else {
-            // 已配合 minAppVersion 1.10.0 使用推荐的 'tab'，安全合法
-            leaf = workspace.getLeaf('tab');
-            await leaf.setViewState({ type: VIEW_TYPE_STATS_HEATMAP, active: true });
+    observeAndInject() {
+        try {
+            // 精准定位左侧边栏的文件树容器
+            const fileExplorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
+            if (fileExplorerLeaves.length === 0) return; 
+
+            const fileExplorerContainer = fileExplorerLeaves[0].view.containerEl;
+            const navContainer = fileExplorerContainer.querySelector('.nav-files-container') as HTMLElement;
+            if (!navContainer) return;
+
+            if (!this.injectedContainer) {
+                this.buildContainer(navContainer);
+            }
+
+            if (!navContainer.contains(this.injectedContainer!)) {
+                navContainer.appendChild(this.injectedContainer!);
+            }
+
+            if (this.currentObserverTarget !== navContainer) {
+                if (this.mutationObserver) this.mutationObserver.disconnect();
+                
+                this.mutationObserver = new MutationObserver(() => {
+                    if (this.injectedContainer && !navContainer.contains(this.injectedContainer)) {
+                        navContainer.appendChild(this.injectedContainer);
+                    }
+                });
+                
+                this.mutationObserver.observe(navContainer, { childList: true });
+                this.currentObserverTarget = navContainer;
+            }
+
+        } catch (e) {
+            console.error("Topology Observer Error: ", e);
         }
+    }
+
+    buildContainer(navContainer: HTMLElement) {
+        if (this.sphereEngine) this.sphereEngine.destroy();
+
+        this.injectedContainer = activeDocument.createElement('div');
+        this.injectedContainer.addClass('ts-desktop-parasitic-container');
+
+        const heatmapDiv = this.injectedContainer.createDiv();
+        heatmapDiv.addClass('ts-desktop-heatmap-div');
+
+        navContainer.appendChild(this.injectedContainer);
         
-        if (leaf) {
-            workspace.revealLeaf(leaf);
-        }
+        const heatmapWords = this.cachedWords || [];
+        if (heatmapWords.length === 0) return;
+
+        const maxWordCount = heatmapWords[0].value;
+        const containerMinSide = Math.min(heatmapDiv.clientWidth || 250, heatmapDiv.clientHeight || 250);
+        const baseRadius = Math.max((containerMinSide / 2) * 0.8, 45); 
+
+        // 实例化完整的桌面级交互引擎
+        this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);
+
+        heatmapWords.forEach(({word, value, files}) => {
+            const wordEl = activeDocument.createElement('div');
+            wordEl.innerText = word;
+            
+            const minFont = Math.max(10, baseRadius * 0.15); 
+            const maxFont = Math.max(18, baseRadius * 0.28);
+            const fontSize = Math.max(minFont, Math.min(maxFont, minFont + (value/maxWordCount)*(maxFont-minFont)));
+            
+            const fontWeight = value > maxWordCount * 0.6 ? '700' : '400'; 
+            const filePaths = new Set(files.map(f => f.path));
+
+            // 绑定点击事件：打开上下文弹窗
+            wordEl.addEventListener('click', () => {
+                new WordContextModal(this.app, word, files).open();
+            });
+            
+            this.sphereEngine!.addTag(wordEl, fontSize, fontWeight, filePaths);
+        });
+
+        // 绑定鼠标悬停共现分析逻辑
+        this.sphereEngine.tags.forEach(tag => {
+            const node = tag;
+            node.el.addEventListener('mouseenter', () => {
+                this.sphereEngine!.hoveredTag = node; 
+                this.sphereEngine!.tags.forEach(other => {
+                    let isCoOccurring = false;
+                    for (let p of other.filePaths) { if (node.filePaths.has(p)) { isCoOccurring = true; break; } }
+
+                    if (other === node) other.renderState = 'focused';
+                    else if (isCoOccurring) other.renderState = 'co-occurring';
+                    else other.renderState = 'dimmed';
+                });
+            });
+            
+            node.el.addEventListener('mouseleave', () => {
+                this.sphereEngine!.hoveredTag = null; 
+                this.sphereEngine!.tags.forEach(other => other.renderState = 'normal');
+            });
+        });
+
+        this.sphereEngine.startAnimation();
     }
 }

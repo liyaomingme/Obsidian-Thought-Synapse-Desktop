@@ -27,10 +27,9 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
-// === 新增：插件设置接口与默认值 ===
 interface ThoughtSynapseSettings {
-    analyzeDuration: number; // 0 表示所有时间，其余为天数
-    containerHeight: number; // 容器高度
+    analyzeDuration: number; 
+    containerHeight: number; 
 }
 
 const DEFAULT_SETTINGS: ThoughtSynapseSettings = {
@@ -413,11 +412,9 @@ class WordContextModal extends Modal {
     onClose() { this.contentEl.empty(); }
 }
 
-// === 核心修改：接收设置并进行时间过滤 ===
 async function analyzeVaultData(app: App, settings: ThoughtSynapseSettings) {
     let files = app.vault.getMarkdownFiles();
 
-    // 过滤逻辑：按最后修改时间过滤文件
     if (settings.analyzeDuration > 0) {
         const cutoffTime = Date.now() - (settings.analyzeDuration * 24 * 60 * 60 * 1000);
         files = files.filter(f => f.stat.mtime >= cutoffTime);
@@ -478,17 +475,19 @@ export default class DesktopStatsPlugin extends Plugin {
     
     mutationObserver: MutationObserver | null = null;
     currentObserverTarget: HTMLElement | null = null;
+    private retryCount = 0; // 新增：重试计数器
 
     async onload() {
         await this.loadSettings();
 
         this.app.workspace.onLayoutReady(async () => {
             this.cachedWords = await analyzeVaultData(this.app, this.settings);
-            this.observeAndInject();
+            // 核心修改：使用智能轮询代替直接调用
+            this.ensureInjection();
         });
 
         this.registerEvent(this.app.workspace.on('layout-change', () => {
-            this.observeAndInject();
+            this.ensureInjection();
         }));
 
         this.addCommand({ 
@@ -499,28 +498,26 @@ export default class DesktopStatsPlugin extends Plugin {
             } 
         });
 
-        // 注册设置面板
         this.addSettingTab(new ThoughtSynapseSettingTab(this.app, this));
     }
     
     async loadSettings() { 
         this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); 
     }
+    
     async saveSettings() { 
         await this.saveData(this.settings); 
     }
 
-    // 独立的手动刷新方法，供设置面板和命令调用
     async refreshTopology() {
         this.cachedWords = await analyzeVaultData(this.app, this.settings);
         if (this.injectedContainer) {
             this.injectedContainer.remove();
             this.injectedContainer = null;
         }
-        this.observeAndInject();
+        this.ensureInjection();
     }
 
-    // 独立的高度更新方法，直接应用不卡顿
     updateContainerHeight() {
         if (this.injectedContainer) {
             this.injectedContainer.style.height = `${this.settings.containerHeight}px`;
@@ -534,14 +531,30 @@ export default class DesktopStatsPlugin extends Plugin {
         this.cachedWords = null;
     }
     
-    observeAndInject() {
+    // 核心修改：新增智能重试封装方法
+    ensureInjection() {
+        this.retryCount = 0;
+        this.attemptInject();
+    }
+
+    // 核心修改：阶梯式轮询查找文件树 DOM
+    private attemptInject() {
+        const success = this.observeAndInject();
+        if (!success && this.retryCount < 10) {
+            this.retryCount++;
+            window.setTimeout(() => this.attemptInject(), 400); // 没找到？等 400ms 再试
+        }
+    }
+
+    // 核心修改：将 void 返回值改为 boolean，供上面判断是否成功
+    observeAndInject(): boolean {
         try {
             const fileExplorerLeaves = this.app.workspace.getLeavesOfType('file-explorer');
-            if (fileExplorerLeaves.length === 0) return; 
+            if (fileExplorerLeaves.length === 0) return false; 
 
             const fileExplorerContainer = fileExplorerLeaves[0].view.containerEl;
             const navContainer = fileExplorerContainer.querySelector('.nav-files-container') as HTMLElement;
-            if (!navContainer) return;
+            if (!navContainer) return false; // 还没渲染好，返回 false 触发重试
 
             if (!this.injectedContainer) {
                 this.buildContainer(navContainer);
@@ -563,9 +576,12 @@ export default class DesktopStatsPlugin extends Plugin {
                 this.mutationObserver.observe(navContainer, { childList: true });
                 this.currentObserverTarget = navContainer;
             }
+            
+            return true; // 成功挂载
 
         } catch (e) {
             console.error("Topology Observer Error: ", e);
+            return false;
         }
     }
 
@@ -575,7 +591,6 @@ export default class DesktopStatsPlugin extends Plugin {
         this.injectedContainer = activeDocument.createElement('div');
         this.injectedContainer.addClass('ts-desktop-parasitic-container');
         
-        // 动态读取设置中的高度！
         this.injectedContainer.style.height = `${this.settings.containerHeight}px`;
 
         const heatmapDiv = this.injectedContainer.createDiv();
@@ -634,7 +649,6 @@ export default class DesktopStatsPlugin extends Plugin {
     }
 }
 
-// === 新增：官方标准设置面板 ===
 class ThoughtSynapseSettingTab extends PluginSettingTab {
     plugin: DesktopStatsPlugin;
 
@@ -662,7 +676,7 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.analyzeDuration = Number(value);
                     await this.plugin.saveSettings();
-                    void this.plugin.refreshTopology(); // 更改时间范围需要重新跑底层解析
+                    void this.plugin.refreshTopology();
                 }));
 
         new Setting(containerEl)
@@ -675,7 +689,7 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
                 .onChange(async (value) => {
                     this.plugin.settings.containerHeight = value;
                     await this.plugin.saveSettings();
-                    this.plugin.updateContainerHeight(); // 仅更改高度，极其丝滑
+                    this.plugin.updateContainerHeight();
                 }));
     }
 }

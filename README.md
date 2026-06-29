@@ -29,7 +29,7 @@
 
 <div align="center">
   
-<img width="1080" height="2340" alt="55555" src="https://github.com/user-attachments/assets/c3c0147d-e94a-4ae6-8044-acd972e942fc" />
+<img src="https://github.com/user-attachments/assets/74b43444-c6c7-4340-97c7-e6f549a175af" width="800" alt="浮光拾影 桌面版主界面">
 
 
 

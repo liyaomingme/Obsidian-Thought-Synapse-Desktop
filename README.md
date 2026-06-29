@@ -10,8 +10,7 @@
 <br>
 
 <!-- 🌟 替换：主视觉效果图（建议使用宽度较宽的横图或全景 GIF） -->
-<img width="3024" height="1744" alt="浮光" src="https://github.com/user-attachments/assets/f05cbc8d-de54-4046-afef-d142387f1c47" />
-
+<img src="https://github.com/user-attachments/assets/f05cbc8d-de54-4046-afef-d142387f1c47" width="800" alt="浮光掠影 桌面版主界面">
 
 
 </div>

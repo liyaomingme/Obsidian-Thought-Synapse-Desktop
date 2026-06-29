@@ -1,7 +1,7 @@
 <div align="center">
 
 # Thought Synapse (Desktop)
-**(思维突触 - 桌面版)**
+**(浮光识影 - 桌面版)**
 
 *An interactive, visually stunning 3D semantic network for your Obsidian vault.*<br>
 *一款具备超强可视化交互与极光美学的 Obsidian 知识拓扑中枢。*

@@ -29,9 +29,11 @@
 
 <div align="center">
   
-<!-- 🌟 替换：细节效果图双拼（建议放悬停共现、上下文弹窗等局部细节图） -->
-<img src="![Uploading 浮光识影手机.png…]()
-" width="48%" alt="细节展示1"> &nbsp; <img src="这里填入细节图2的URL" width="48%" alt="细节展示2">
+<img width="1080" height="2340" alt="细节4" src="https://github.com/user-attachments/assets/c2368370-5c53-45ff-a834-412c2842c859" />
+<img width="1080" height="2340" alt="细节3" src="https://github.com/user-attachments/assets/e3a75b38-151c-47df-af6f-c0b303e7b121" />
+<img width="1080" height="2340" alt="细节2" src="https://github.com/user-attachments/assets/e20826bc-db5a-4b20-a4d3-2a8a27c4d9fc" />
+<img width="1080" height="2340" alt="细节1" src="https://github.com/user-attachments/assets/bedbe97c-a738-4e6a-ba9d-7dce1ac0ce11" />
+
 
 </div>
 

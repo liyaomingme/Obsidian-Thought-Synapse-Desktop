@@ -7,6 +7,11 @@
 
 [ 🇬🇧 English ](#english) | [ 🇨🇳 简体中文 ](#简体中文)
 
+<br>
+
+<!-- 🌟 替换：主视觉效果图（建议使用宽度较宽的横图或全景 GIF） -->
+<img src="这里填入你的主界面效果图URL" width="800" alt="主视觉效果图">
+
 </div>
 
 ---
@@ -18,6 +23,16 @@
 > 为了保证最佳的视觉与交互体验，如果您主要在手机端使用，**请勿混用此版本**。请前往安装移动端专属竖版：`Thought Synapse (Mobile)`
 
 “浮光拾影”不仅仅是一个侧边栏词云工具，它是你个人知识库的“物理引擎”。它通过真实的 3D 星云交互，将你散落的笔记、高频词汇与思维碎片连接起来，让知识的流转可视化、可触摸，为你的数字花园赋予呼吸感。
+
+### 📸 视觉预览 (Gallery)
+
+<div align="center">
+  
+<!-- 🌟 替换：细节效果图双拼（建议放悬停共现、上下文弹窗等局部细节图） -->
+<img src="![Uploading 浮光识影手机.png…]()
+" width="48%" alt="细节展示1"> &nbsp; <img src="这里填入细节图2的URL" width="48%" alt="细节展示2">
+
+</div>
 
 ### 🌟 核心特性 (Features)
 
@@ -44,16 +59,9 @@
 
 <div align="center">
 
-<div align="center">
-
 <img src="https://github.com/user-attachments/assets/bf88c060-67b0-4fbd-8a7d-c0e1d850ee3d" width="260" alt="二合一赞赏码">
 
 *( 支持使用 微信 / 支付宝 扫码 )*
-
-**✨ 感谢你的支持与陪伴！✨**
-
-</div>
-
 
 **✨ 感谢你的支持与陪伴！✨**
 
@@ -65,4 +73,4 @@
 
 欢迎加入我们的数字美学社群！遇到任何 Bug、排版错位，或是对新功能有绝妙的灵感，请带上你的 **设备型号 + Obsidian 版本号** 进行反馈。
 - **GitHub Issues**: [点击提交反馈](https://github.com/liyaomingme/Obsidian-Thought-Synapse-Desktop/issues)
-- **小红书同频交流**: 搜索作者 `李耀明` 获取最新插件动态与社群入口。
+- **小红书同频交流**: 搜索作者 `liyaoming` 获取最新插件动态与社群入口。

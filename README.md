@@ -73,4 +73,4 @@
 
 欢迎加入我们的数字美学社群！遇到任何 Bug、排版错位，或是对新功能有绝妙的灵感，请带上你的 **设备型号 + Obsidian 版本号** 进行反馈。
 - **GitHub Issues**: [点击提交反馈](https://github.com/liyaomingme/Obsidian-Thought-Synapse-Desktop/issues)
-- **小红书同频交流**: 搜索作者 `liyaoming` 获取最新插件动态与社群入口。
+- **小红书同频交流**: 搜索作者 `李耀明` 获取最新插件动态与社群入口。

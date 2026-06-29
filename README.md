@@ -10,7 +10,8 @@
 <br>
 
 <!-- 🌟 替换：主视觉效果图（建议使用宽度较宽的横图或全景 GIF） -->
-<img src="https://github.com/user-attachments/assets/f27e9994-3569-4c69-ba09-e9d09cef1d37" width="350" alt="浮光拾影">
+<img width="3024" height="1744" alt="浮光" src="https://github.com/user-attachments/assets/f05cbc8d-de54-4046-afef-d142387f1c47" />
+
 
 
 </div>
@@ -25,14 +26,6 @@
 
 “浮光拾影”不仅仅是一个侧边栏词云工具，它是你个人知识库的“物理引擎”。它通过真实的 3D 星云交互，将你散落的笔记、高频词汇与思维碎片连接起来，让知识的流转可视化、可触摸，为你的数字花园赋予呼吸感。
 
-
-### 📸 视觉预览 (Gallery)
-
-<div align="center">
-  <img src="https://github.com/user-attachments/assets/69385261-9158-43eb-b6f1-d4b4292f89c4" width="350" alt="视觉预览图">
-</div>
-
-</div>
 
 ### 🌟 核心特性 (Features)
 

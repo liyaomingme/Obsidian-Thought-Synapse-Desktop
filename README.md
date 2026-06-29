@@ -89,7 +89,6 @@ Unlike traditional 2D graph views, **Thought Synapse** is an interactive, analyt
 4. 将下载好的 3 个文件放入刚才新建的文件夹中。
 5. 重启 Obsidian，进入设置 -> 第三方插件，找到并开启它。
 
-<img width="628" height="866" alt="image" src="https://github.com/user-attachments/assets/565963ea-2d93-42e4-8cea-066d49e5a729" />
 
 
 <br>

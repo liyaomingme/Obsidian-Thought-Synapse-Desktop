@@ -480,8 +480,6 @@ export default class DesktopStatsPlugin extends Plugin {
             this.cachedWords = await analyzeVaultData(this.app, this.settings);
             this.ensureInjection();
 
-            // ✨ 核心终极修复：启用 1秒/次 的无脑心跳探测 ✨
-            // 如果底层 DOM 突然被 Obsidian 刷没了，它会在 1 秒内自动挂载回去！
             this.registerInterval(window.setInterval(() => {
                 this.ensureInjection();
             }, 1000));
@@ -531,8 +529,11 @@ export default class DesktopStatsPlugin extends Plugin {
         this.cachedWords = null;
     }
     
-    // ✨ 绝对无脑、死咬不放的注入逻辑
     ensureInjection() {
+        // ✨ 致命缺陷终极防御：
+        // 如果底层数据还是空（分析未完成），绝对不准去创建那具“空壳尸体”！
+        if (!this.cachedWords || this.cachedWords.length === 0) return;
+
         try {
             const leaves = this.app.workspace.getLeavesOfType('file-explorer');
             if (leaves.length === 0) return; 
@@ -540,16 +541,13 @@ export default class DesktopStatsPlugin extends Plugin {
             const fileExplorerContainer = leaves[0].view.containerEl;
             const navContainer = fileExplorerContainer.querySelector('.nav-files-container') as HTMLElement;
             
-            // 还没渲染好的时候直接退出，等下一秒心跳重试
             if (!navContainer) return; 
 
-            // 如果容器还没建，先建好（不挂载）
+            // 只有当数据准备好了，才去渲染外壳和内部3D引擎
             if (!this.injectedContainer) {
                 this.buildContainer();
             }
 
-            // 【关键判断】：看看我们的容器，是不是在*当前最新*的导航容器里？
-            // 如果父节点变了（或者不在里面），强行塞进去！
             if (this.injectedContainer && navContainer !== this.injectedContainer.parentElement) {
                 navContainer.appendChild(this.injectedContainer);
             }
@@ -560,6 +558,10 @@ export default class DesktopStatsPlugin extends Plugin {
     }
 
     buildContainer() {
+        // ✨ 第二道防线：即使进来了，没数据也不画，直接退！
+        const heatmapWords = this.cachedWords || [];
+        if (heatmapWords.length === 0) return;
+
         if (this.sphereEngine) this.sphereEngine.destroy();
 
         this.injectedContainer = activeDocument.createElement('div');
@@ -569,13 +571,8 @@ export default class DesktopStatsPlugin extends Plugin {
 
         const heatmapDiv = this.injectedContainer.createDiv();
         heatmapDiv.addClass('ts-desktop-heatmap-div');
-        
-        const heatmapWords = this.cachedWords || [];
-        if (heatmapWords.length === 0) return;
 
         const maxWordCount = heatmapWords[0].value;
-        
-        // 初始给个默认半径，后面挂载后 ResizeObserver 会自动矫正
         const baseRadius = 120; 
 
         this.sphereEngine = new WordSphereEngine(heatmapDiv, baseRadius);

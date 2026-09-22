@@ -66,6 +66,36 @@
     transform: rotate(180deg) scale(1.15);
 }
 
+/* --- v1.8.0 右上角语言切换 --- */
+.ts-lang-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 4px;
+}
+.ts-lang-toggle {
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 999px;
+    background: var(--background-secondary);
+    border: 1px solid var(--background-modifier-border);
+}
+.ts-lang-opt {
+    padding: 4px 14px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    transition: background 0.2s ease, color 0.2s ease;
+}
+.ts-lang-opt:hover { color: var(--text-normal); }
+.ts-lang-opt.is-active {
+    background: var(--interactive-accent);
+    color: var(--text-on-accent);
+}
+
 /* --- v1.7.9 设置页:横版宽幅排版优化 --- */
 /* 标签管理器限宽居中,大屏不至于拉满整行难看 */
 .stopword-manager {

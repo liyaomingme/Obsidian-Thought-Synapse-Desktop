@@ -1,4 +1,4 @@
-import { App, Plugin, Modal, TFile, setIcon, PluginSettingTab, Setting } from 'obsidian';
+import { App, Plugin, Modal, TFile, setIcon, PluginSettingTab, Setting, moment } from 'obsidian';
 
 const STOP_WORDS = new Set([
     'the', 'and', 'for', 'that', 'this', 'with', 'from', 'https', 'com', 'org', 
@@ -28,30 +28,42 @@ interface SphereNode {
 }
 
 // ✨ v1.7.9 设置升级:检索文件夹(多文件夹) + 屏蔽词改为数组(标签式管理)
+// ✨ v1.8.0 新增 uiLang:界面语言 auto(跟随设备/Obsidian)/zh/en
 interface ThoughtSynapseSettings {
     analyzeDuration: number; 
     containerHeight: number; 
     customStopWords: string[];
     hotwordFolder: string;
+    uiLang: string;
 }
 
 const DEFAULT_SETTINGS: ThoughtSynapseSettings = {
     analyzeDuration: 0,
     containerHeight: 340,
     customStopWords: [],
-    hotwordFolder: ""
+    hotwordFolder: "",
+    uiLang: "auto"
 };
 
 // 屏蔽词数量上限:防止词过多导致星云噪音与设置面板过长
 const MAX_STOP_WORDS = 50;
 
 // ✨ v1.7.9 界面双语:跟随 Obsidian 界面语言(zh=中文,其他=英文)
-function getLang(): 'zh' | 'en' {
-    const lang = (window.localStorage.getItem('language') || 'en').toLowerCase();
-    return lang.startsWith('zh') ? 'zh' : 'en';
+// ✨ v1.8.0 检测增强 + 手动切换:settings.uiLang 支持 auto/zh/en
+function detectLang(): 'zh' | 'en' {
+    // 三重信号:Obsidian 界面语言设置 → moment 语言 → 设备系统语言
+    const candidates = [
+        window.localStorage.getItem('language') || '',
+        moment.locale() || '',
+        navigator.language || ''
+    ];
+    for (const c of candidates) {
+        if (c && c.toLowerCase().startsWith('zh')) return 'zh';
+    }
+    return 'en';
 }
 
-function createI18n() {
+function createI18n(lang: 'zh' | 'en') {
     const zh = {
         settingsTitle: 'Thought Synapse (桌面版) 设置',
         scopeHeading: '检索范围',
@@ -98,7 +110,6 @@ function createI18n() {
         removeAria: (w: string) => `Unblock ${w}`,
         msgDup: (w: string) => `"${w}" is already blocked`
     };
-    const lang = getLang();
     return lang === 'zh' ? zh : en;
 }
 type I18n = ReturnType<typeof createI18n>;
@@ -751,8 +762,17 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        // ✨ v1.7.9 界面双语 + 分组排版(横版:每个分组一个标题,控件区间距更大)
-        const t = createI18n();
+        // ✨ v1.8.0 右上角语言切换:auto 检测不可靠时,用户一键切换 EN/中文,选择被记住
+        const uiLang = this.plugin.settings.uiLang;
+        const lang: 'zh' | 'en' = uiLang === 'zh' || uiLang === 'en' ? uiLang : detectLang();
+        const t = createI18n(lang);
+
+        const langRow = containerEl.createDiv('ts-lang-row');
+        const toggle = langRow.createDiv('ts-lang-toggle');
+        const enOpt = toggle.createSpan({ text: 'EN', cls: 'ts-lang-opt' + (lang === 'en' ? ' is-active' : '') });
+        const zhOpt = toggle.createSpan({ text: '中文', cls: 'ts-lang-opt' + (lang === 'zh' ? ' is-active' : '') });
+        enOpt.onclick = () => { void this.switchLang('en'); };
+        zhOpt.onclick = () => { void this.switchLang('zh'); };
 
         new Setting(containerEl).setName(t.settingsTitle).setHeading();
 
@@ -774,11 +794,11 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
             .setName(t.duration)
             .setDesc(t.durationDesc)
             .addDropdown(drop => drop
-                .addOption('0', getLang() === 'zh' ? '所有时间 (全部笔记)' : 'All time')
-                .addOption('7', getLang() === 'zh' ? '最近 7 天' : 'Last 7 days')
-                .addOption('30', getLang() === 'zh' ? '最近 30 天' : 'Last 30 days')
-                .addOption('180', getLang() === 'zh' ? '最近半年' : 'Last 6 months')
-                .addOption('365', getLang() === 'zh' ? '最近一年' : 'Last year')
+                .addOption('0', lang === 'zh' ? '所有时间 (全部笔记)' : 'All time')
+                .addOption('7', lang === 'zh' ? '最近 7 天' : 'Last 7 days')
+                .addOption('30', lang === 'zh' ? '最近 30 天' : 'Last 30 days')
+                .addOption('180', lang === 'zh' ? '最近半年' : 'Last 6 months')
+                .addOption('365', lang === 'zh' ? '最近一年' : 'Last year')
                 .setValue(this.plugin.settings.analyzeDuration.toString())
                 .onChange(async (value) => {
                     this.plugin.settings.analyzeDuration = Number(value);
@@ -890,5 +910,13 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
         });
 
         renderTags();
+    }
+
+    // 切换界面语言:保存选择并整页重渲染
+    private async switchLang(lang: 'zh' | 'en') {
+        if (this.plugin.settings.uiLang === lang) return;
+        this.plugin.settings.uiLang = lang;
+        await this.plugin.saveSettings();
+        this.display();
     }
 }

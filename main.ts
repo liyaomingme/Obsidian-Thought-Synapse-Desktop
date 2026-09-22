@@ -27,18 +27,81 @@ interface SphereNode {
     filePaths: Set<string>;
 }
 
-// ✨ 新增 customStopWords 设置项
+// ✨ v1.7.9 设置升级:检索文件夹(多文件夹) + 屏蔽词改为数组(标签式管理)
 interface ThoughtSynapseSettings {
     analyzeDuration: number; 
     containerHeight: number; 
-    customStopWords: string;
+    customStopWords: string[];
+    hotwordFolder: string;
 }
 
 const DEFAULT_SETTINGS: ThoughtSynapseSettings = {
     analyzeDuration: 0,
     containerHeight: 340,
-    customStopWords: ""
+    customStopWords: [],
+    hotwordFolder: ""
 };
+
+// 屏蔽词数量上限:防止词过多导致星云噪音与设置面板过长
+const MAX_STOP_WORDS = 50;
+
+// ✨ v1.7.9 界面双语:跟随 Obsidian 界面语言(zh=中文,其他=英文)
+function getLang(): 'zh' | 'en' {
+    const lang = (window.localStorage.getItem('language') || 'en').toLowerCase();
+    return lang.startsWith('zh') ? 'zh' : 'en';
+}
+
+function createI18n() {
+    const zh = {
+        settingsTitle: 'Thought Synapse (桌面版) 设置',
+        scopeHeading: '检索范围',
+        folder: '检索文件夹 (留空 = 全库)',
+        folderDesc: '只统计这些文件夹(含子文件夹)内最近修改的笔记，多个文件夹用逗号分隔，如：项目, 灵感。留空则扫描整个仓库。',
+        folderPlaceholder: '例如: 项目, 灵感',
+        duration: '词云分析时间范围',
+        durationDesc: '仅提取最近被修改过的笔记，聚焦近期思考热点。修改设置或笔记后星云会自动重新聚合。',
+        appearanceHeading: '外观',
+        height: '星云容器高度 (px)',
+        heightDesc: '调整 3D 星云在侧边栏底部占据的纵向高度。默认 340px。',
+        stopwordsHeading: '屏蔽词',
+        stopwords: '自定义屏蔽词库',
+        stopDesc: '输入词后点「添加」或按回车，可连续输入；点标签上的 × 可取消屏蔽。最多 50 个。',
+        inputPlaceholder: '输入要屏蔽的词…',
+        add: '添加',
+        emptyTags: '暂无屏蔽词',
+        msgInvalid: '请输入包含文字或数字的词',
+        msgLimit: `最多可屏蔽 ${MAX_STOP_WORDS} 个词，请先移除部分`,
+        refreshAria: '重新聚合星云',
+        removeAria: (w: string) => `取消屏蔽 ${w}`,
+        msgDup: (w: string) => `「${w}」已在屏蔽列表中`
+    };
+    const en = {
+        settingsTitle: 'Thought Synapse (Desktop) Settings',
+        scopeHeading: 'Search Scope',
+        folder: 'Search folders (empty = whole vault)',
+        folderDesc: 'Only analyze recent notes inside these folders (subfolders included). Separate multiple folders with commas, e.g. Projects, Ideas. Leave empty to scan the whole vault.',
+        folderPlaceholder: 'e.g. Projects, Ideas',
+        duration: 'Analysis time range',
+        durationDesc: 'Only analyze recently modified notes to focus on current thinking. The nebula re-aggregates automatically after edits.',
+        appearanceHeading: 'Appearance',
+        height: 'Nebula container height (px)',
+        heightDesc: 'The vertical space the 3D nebula occupies at the bottom of your file explorer. Default: 340px.',
+        stopwordsHeading: 'Stop Words',
+        stopwords: 'Custom stop words',
+        stopDesc: 'Type a word and tap Add (or press Enter) — input continuously; tap × on a tag to unblock. Up to 50 words.',
+        inputPlaceholder: 'Type a word to block…',
+        add: 'Add',
+        emptyTags: 'No stop words yet',
+        msgInvalid: 'Please enter a word containing letters, CJK characters or digits',
+        msgLimit: `Limit of ${MAX_STOP_WORDS} words reached — remove some first`,
+        refreshAria: 'Re-analyze the nebula',
+        removeAria: (w: string) => `Unblock ${w}`,
+        msgDup: (w: string) => `"${w}" is already blocked`
+    };
+    const lang = getLang();
+    return lang === 'zh' ? zh : en;
+}
+type I18n = ReturnType<typeof createI18n>;
 
 class WordSphereEngine {
     container: HTMLElement;
@@ -418,18 +481,29 @@ class WordContextModal extends Modal {
 async function analyzeVaultData(app: App, settings: ThoughtSynapseSettings) {
     let files = app.vault.getMarkdownFiles();
 
+    // ✨ v1.7.9 多文件夹检索:逗号分隔多个文件夹,含子文件夹
+    const folderPrefixes = (settings.hotwordFolder || "")
+        .split(/[,，]/)
+        .map(p => p.trim().replace(/\/+$/, ""))
+        .filter(p => p.length > 0);
+    if (folderPrefixes.length > 0) {
+        files = files.filter(f => folderPrefixes.some(p => f.path === p || f.path.startsWith(p + "/")));
+    }
+
     if (settings.analyzeDuration > 0) {
         const cutoffTime = Date.now() - (settings.analyzeDuration * 24 * 60 * 60 * 1000);
         files = files.filter(f => f.stat.mtime >= cutoffTime);
     }
 
+    // ✨ 性能保护:按修改时间倒序,最多精读最近 200 篇(大仓库不再卡顿)
+    files = files.sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, 200);
+
     if (files.length === 0) return [];
 
     const wordData = new Map<string, { count: number, files: Set<TFile> }>();
 
-    // ✨ 核心修改：解析用户设置的自定义屏蔽词
-    const customWordsArray = settings.customStopWords.split(/[,，\s]+/).filter(w => w.trim().length > 0);
-    const customStopWordsSet = new Set(customWordsArray);
+    // ✨ v1.7.9 屏蔽词为词数组(由标签式设置页维护)
+    const customStopWordsSet = new Set(settings.customStopWords);
 
     for (const file of files) {
         const content = await app.vault.cachedRead(file);
@@ -494,6 +568,18 @@ export default class DesktopStatsPlugin extends Plugin {
             }, 1000));
         });
 
+        // ✨ v1.7.9 自动刷新:笔记有增删改后,静置 90 秒(防抖)自动重算星云——
+        // 书写过程完全不打扰,停下笔一小会儿星云就悄悄跟上最新内容
+        let vaultChangeTimer: number | null = null;
+        const scheduleVaultRefresh = () => {
+            if (vaultChangeTimer) window.clearTimeout(vaultChangeTimer);
+            vaultChangeTimer = window.setTimeout(() => { void this.refreshTopology(); }, 90_000);
+        };
+        this.registerEvent(this.app.vault.on('modify', scheduleVaultRefresh));
+        this.registerEvent(this.app.vault.on('create', scheduleVaultRefresh));
+        this.registerEvent(this.app.vault.on('delete', scheduleVaultRefresh));
+        this.registerEvent(this.app.vault.on('rename', scheduleVaultRefresh));
+
         this.registerEvent(this.app.workspace.on('layout-change', () => {
             this.ensureInjection();
         }));
@@ -509,13 +595,30 @@ export default class DesktopStatsPlugin extends Plugin {
         this.addSettingTab(new ThoughtSynapseSettingTab(this.app, this));
     }
     
-    async loadSettings() { 
-        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData()); 
+    async loadSettings() {
+        const data = await this.loadData() as Partial<ThoughtSynapseSettings> | null;
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
+
+        // 兼容迁移:v1.7.9 之前 customStopWords 为逗号/空格分隔的字符串
+        const legacy = data?.customStopWords as unknown;
+        if (typeof legacy === 'string') {
+            this.settings.customStopWords = legacy.split(/[,，\s]+/).filter(w => w.trim().length > 0);
+        }
+        if (!Array.isArray(this.settings.customStopWords)) {
+            this.settings.customStopWords = [];
+        }
     }
     
-    async saveSettings() { 
-        await this.saveData(this.settings); 
+    async saveSettings() {
+        await this.saveData(this.settings);
+
+        // ✨ v1.7.9 防抖:连续修改设置(如逐个添加屏蔽词)时,停顿 1 秒后才重算星云,
+        // 保证连续输入体验(容器高度滑杆走 updateContainerHeight 直调,不受影响)
+        if (this.rebuildTimer) window.clearTimeout(this.rebuildTimer);
+        this.rebuildTimer = window.setTimeout(() => { void this.refreshTopology(); }, 1000);
     }
+
+    private rebuildTimer: number | null = null;
 
     async refreshTopology() {
         this.cachedWords = await analyzeVaultData(this.app, this.settings);
@@ -524,6 +627,12 @@ export default class DesktopStatsPlugin extends Plugin {
             this.injectedContainer = null;
         }
         this.ensureInjection();
+    }
+
+    // ✨ v1.7.9 手动刷新:立即重算并重建星云(设置变化走 1 秒防抖,此处为即时通道)
+    manualRefresh() {
+        if (this.rebuildTimer) { window.clearTimeout(this.rebuildTimer); this.rebuildTimer = null; }
+        void this.refreshTopology();
     }
 
     updateContainerHeight() {
@@ -535,6 +644,7 @@ export default class DesktopStatsPlugin extends Plugin {
     onunload() { 
         if (this.sphereEngine) this.sphereEngine.destroy();
         if (this.injectedContainer) this.injectedContainer.remove();
+        if (this.rebuildTimer) window.clearTimeout(this.rebuildTimer);
         this.cachedWords = null;
     }
     
@@ -573,6 +683,11 @@ export default class DesktopStatsPlugin extends Plugin {
         this.injectedContainer.addClass('ts-desktop-parasitic-container');
         
         this.injectedContainer.style.height = `${this.settings.containerHeight}px`;
+
+        // ✨ v1.7.9 手动刷新按钮(右上角,悬停有提示)
+        const i18n = createI18n();
+        const refreshBtn = this.injectedContainer.createSpan({ text: '↻', cls: 'ts-desktop-refresh-btn', attr: { 'aria-label': i18n.refreshAria } });
+        refreshBtn.addEventListener('click', (e) => { e.stopPropagation(); this.manualRefresh(); });
 
         const heatmapDiv = this.injectedContainer.createDiv();
         heatmapDiv.addClass('ts-desktop-heatmap-div');
@@ -636,17 +751,34 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
         const { containerEl } = this;
         containerEl.empty();
 
-        new Setting(containerEl).setName('Thought Synapse (桌面版) 设置').setHeading();
+        // ✨ v1.7.9 界面双语 + 分组排版(横版:每个分组一个标题,控件区间距更大)
+        const t = createI18n();
+
+        new Setting(containerEl).setName(t.settingsTitle).setHeading();
+
+        // ── 检索范围 ──
+        new Setting(containerEl).setName(t.scopeHeading).setHeading();
 
         new Setting(containerEl)
-            .setName('词云分析时间范围')
-            .setDesc('仅提取最近被修改过的笔记，有助于聚焦近期思考热点。（修改后会自动重新分析）')
+            .setName(t.folder)
+            .setDesc(t.folderDesc)
+            .addText(text => text
+                .setPlaceholder(t.folderPlaceholder)
+                .setValue(this.plugin.settings.hotwordFolder)
+                .onChange(async (value) => {
+                    this.plugin.settings.hotwordFolder = value;
+                    await this.plugin.saveSettings();
+                }));
+
+        new Setting(containerEl)
+            .setName(t.duration)
+            .setDesc(t.durationDesc)
             .addDropdown(drop => drop
-                .addOption('0', '所有时间 (全部笔记)')
-                .addOption('7', '最近 7 天')
-                .addOption('30', '最近 30 天')
-                .addOption('180', '最近半年')
-                .addOption('365', '最近一年')
+                .addOption('0', getLang() === 'zh' ? '所有时间 (全部笔记)' : 'All time')
+                .addOption('7', getLang() === 'zh' ? '最近 7 天' : 'Last 7 days')
+                .addOption('30', getLang() === 'zh' ? '最近 30 天' : 'Last 30 days')
+                .addOption('180', getLang() === 'zh' ? '最近半年' : 'Last 6 months')
+                .addOption('365', getLang() === 'zh' ? '最近一年' : 'Last year')
                 .setValue(this.plugin.settings.analyzeDuration.toString())
                 .onChange(async (value) => {
                     this.plugin.settings.analyzeDuration = Number(value);
@@ -654,9 +786,12 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
                     void this.plugin.refreshTopology();
                 }));
 
+        // ── 外观 ──
+        new Setting(containerEl).setName(t.appearanceHeading).setHeading();
+
         new Setting(containerEl)
-            .setName('星云容器高度 (px)')
-            .setDesc('调整 3D 星云在侧边栏底部占据的纵向高度。默认 340px。')
+            .setName(t.height)
+            .setDesc(t.heightDesc)
             .addSlider(slider => slider
                 .setLimits(200, 800, 10)
                 .setValue(this.plugin.settings.containerHeight)
@@ -667,21 +802,93 @@ class ThoughtSynapseSettingTab extends PluginSettingTab {
                     this.plugin.updateContainerHeight();
                 }));
 
-        // ✨ 新增：高颜值的自定义屏蔽词输入框
+        // ── 屏蔽词(标签式管理,横版宽幅排版) ──
+        new Setting(containerEl).setName(t.stopwordsHeading).setHeading();
+
         new Setting(containerEl)
-            .setName('自定义屏蔽词库')
-            .setDesc('在此输入你不想在星云中看到的词汇（如：大家, 就是, 你的），支持使用空格或逗号分隔。设置后星云将立刻重新聚合。')
-            .addTextArea(text => {
-                text.inputEl.addClass('ts-desktop-custom-textarea');
-                text
-                    .setPlaceholder('输入要屏蔽的无效词汇...')
-                    .setValue(this.plugin.settings.customStopWords)
-                    .onChange(async (value) => {
-                        this.plugin.settings.customStopWords = value;
+            .setName(t.stopwords)
+            .setDesc(t.stopDesc);
+
+        const manager = containerEl.createDiv('stopword-manager');
+        const inputRow = manager.createDiv('stopword-input-row');
+        const wordInput = inputRow.createEl('input', {
+            cls: 'stopword-input',
+            type: 'text',
+            attr: { placeholder: t.inputPlaceholder, 'aria-label': t.inputPlaceholder }
+        });
+        const addBtn = inputRow.createEl('button', { cls: 'stopword-add-btn', text: t.add });
+
+        const metaRow = manager.createDiv('stopword-meta-row');
+        const msgEl = metaRow.createDiv({ cls: 'stopword-msg', text: '' });
+        const counterEl = metaRow.createDiv({ cls: 'stopword-counter' });
+        const tagsWrap = manager.createDiv('stopword-tags');
+
+        let msgTimer: number | null = null;
+        const flashMsg = (text: string) => {
+            msgEl.setText(text);
+            msgEl.addClass('is-visible');
+            if (msgTimer) window.clearTimeout(msgTimer);
+            msgTimer = window.setTimeout(() => msgEl.removeClass('is-visible'), 2000);
+        };
+
+        // animateWord: 只有刚添加的词播放入场动画，其余标签保持静止（避免连续输入时整排闪烁）
+        const renderTags = (animateWord?: string) => {
+            const words = this.plugin.settings.customStopWords;
+            counterEl.setText(`${words.length} / ${MAX_STOP_WORDS}`);
+            tagsWrap.empty();
+            if (words.length === 0) {
+                tagsWrap.createDiv({ cls: 'stopword-empty', text: t.emptyTags });
+                return;
+            }
+            words.forEach(word => {
+                const chip = tagsWrap.createDiv('stopword-chip');
+                if (animateWord && word === animateWord) chip.addClass('is-new');
+                chip.createSpan({ text: word, cls: 'stopword-chip-text' });
+                const removeBtn = chip.createSpan({ text: '×', cls: 'stopword-chip-remove', attr: { 'aria-label': t.removeAria(word) } });
+                removeBtn.onclick = () => {
+                    void (async () => {
+                        this.plugin.settings.customStopWords = words.filter(w => w !== word);
                         await this.plugin.saveSettings();
-                        // 桌面端专属：输入完成立刻无缝重绘画布
-                        void this.plugin.refreshTopology();
-                    });
+                        renderTags();
+                    })();
+                };
             });
+        };
+
+        const addWord = () => {
+            void (async () => {
+                const word = wordInput.value.trim();
+                if (!word) return;
+                // 过滤纯符号（如单独的逗号、句号）
+                if (!/[\u4e00-\u9fa5A-Za-z0-9]/.test(word)) {
+                    flashMsg(t.msgInvalid);
+                    return;
+                }
+                const words = this.plugin.settings.customStopWords;
+                if (words.includes(word)) {
+                    flashMsg(t.msgDup(word));
+                    wordInput.value = '';
+                    return;
+                }
+                if (words.length >= MAX_STOP_WORDS) {
+                    flashMsg(t.msgLimit);
+                    return;
+                }
+                words.push(word);
+                await this.plugin.saveSettings();
+                wordInput.value = '';
+                renderTags(word);
+                wordInput.focus();
+            })();
+        };
+
+        // 点击按钮时不让输入框失焦（键盘/焦点保持，连续输入）
+        addBtn.addEventListener('pointerdown', (e) => e.preventDefault());
+        addBtn.onclick = () => addWord();
+        wordInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); addWord(); }
+        });
+
+        renderTags();
     }
 }

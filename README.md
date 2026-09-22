@@ -1,6 +1,6 @@
 <div align="center">
 
-# ✨ 浮光掠影 Floating Glimpse (Desktop)
+# ✨ Floating Glimpse (Desktop) | 浮光掠影
 
 *An interactive, visually stunning 3D semantic network for your Obsidian vault.*
 一款具备超强可视化交互与极光美学的 Obsidian 知识拓扑中枢。
